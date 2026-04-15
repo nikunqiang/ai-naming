@@ -1,0 +1,102 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Noto Sans SC', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-ink-50 text-ink-800;
+  }
+
+  ::selection {
+    @apply bg-vermilion-500/20;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-8 py-3 bg-ink-900 text-ink-50 font-medium rounded-sm
+           transition-all duration-300 ease-out
+           hover:bg-ink-800 hover:shadow-lg hover:shadow-ink-900/10
+           active:scale-[0.98];
+  }
+
+  .btn-secondary {
+    @apply px-8 py-3 bg-transparent text-ink-700 font-medium rounded-sm
+           border border-ink-300
+           transition-all duration-300 ease-out
+           hover:border-ink-400 hover:bg-ink-100;
+  }
+
+  .btn-accent {
+    @apply px-8 py-3 bg-vermilion-500 text-white font-medium rounded-sm
+           transition-all duration-300 ease-out
+           hover:bg-vermilion-600 hover:shadow-lg hover:shadow-vermilion-500/20
+           active:scale-[0.98];
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 bg-white border border-ink-200 rounded-sm
+           text-ink-800 placeholder:text-ink-400
+           transition-all duration-200
+           focus:outline-none focus:border-ink-400 focus:ring-1 focus:ring-ink-200;
+  }
+
+  .card {
+    @apply bg-white rounded-sm border border-ink-100
+           shadow-sm hover:shadow-md transition-shadow duration-300;
+  }
+
+  .card-elegant {
+    @apply bg-white/80 backdrop-blur-sm rounded-sm
+           border border-ink-200/50
+           shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05)]
+           hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.08)]
+           transition-all duration-300;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .ink-wash {
+    background: radial-gradient(ellipse at 30% 20%, rgba(0,0,0,0.02) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 80%, rgba(0,0,0,0.03) 0%, transparent 40%);
+  }
+
+  .brush-stroke {
+    position: relative;
+  }
+
+  .brush-stroke::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg,
+      transparent 0%,
+      currentColor 10%,
+      currentColor 90%,
+      transparent 100%
+    );
+    opacity: 0.3;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.4s ease-out;
+  }
+
+  .brush-stroke:hover::after {
+    transform: scaleX(1);
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "provider": "custom-anthropic",
+  "model": "astron-code-latest",
+  "providers": {
+    "anthropic": {
+      "models": ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"]
+    },
+    "openai": {
+      "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"]
+    },
+    "google": {
+      "models": ["gemini-2.0-flash", "gemini-1.5-pro"]
+    },
+    "deepseek": {
+      "models": ["deepseek-chat", "deepseek-reasoner"]
+    },
+    "ollama": {
+      "models": ["qwen2.5:14b", "llama3.1:8b", "deepseek-r1:7b"]
+    },
+    "custom-anthropic": {
+      "models": ["astron-code-latest"],
+      "baseUrl": "https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic"
+    }
+  }
+}
