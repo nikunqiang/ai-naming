@@ -53,7 +53,7 @@ function loadNameData(): { freqMap: Map<string, number>; percentileMap: Map<stri
   // Compute percentile ranking per name length.
   // Group names by length, sort by count, and assign percentile (0-100).
   const byLength = new Map<number, Array<{ name: string; count: number }>>()
-  for (const [name, count] of freq) {
+  for (const [name, count] of Array.from(freq.entries())) {
     const len = name.length
     const arr = byLength.get(len) || []
     arr.push({ name, count })
@@ -61,9 +61,9 @@ function loadNameData(): { freqMap: Map<string, number>; percentileMap: Map<stri
   }
 
   const percentile = new Map<string, number>()
-  for (const [, arr] of byLength) {
+  for (const [, arr] of Array.from(byLength.entries())) {
     // Sort ascending by count
-    arr.sort((a, b) => a.count - b.count)
+    arr.sort((a: { name: string; count: number }, b: { name: string; count: number }) => a.count - b.count)
     const total = arr.length
     for (let i = 0; i < total; i++) {
       // Percentile: what fraction of names have a count <= this name's count
@@ -98,7 +98,7 @@ export function analyzeNamePopularity(nameOnly: string): PopularityResult {
   let homophoneCount = 0
   const nameLen = nameOnly.length
 
-  for (const [key, val] of freqMap) {
+  for (const [key, val] of Array.from(freqMap.entries())) {
     if (key.length === nameLen && key !== nameOnly) {
       homophoneCount += val
     }

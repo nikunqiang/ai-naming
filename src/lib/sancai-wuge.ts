@@ -206,7 +206,7 @@ export function getWugeFortune(num: number): WuGeDetailItem {
   const data = loadWugeFortune()
   // 大于81的映射回1-81范围
   const mappedNum = num > 81 ? ((num - 1) % 81) + 1 : num
-  const entry = data[String(mappedNum)] || { level: '半吉', desc: '运势一般' }
+  const entry = data?.[String(mappedNum)] || { level: '半吉', desc: '运势一般' }
 
   return {
     num: mappedNum,

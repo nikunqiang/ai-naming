@@ -124,6 +124,7 @@ describe('analyzeWuxingBenefit', () => {
       timeZhi: '子',
       wuxing: { gold: 2, wood: 2, water: 2, fire: 0, earth: 2 },
       missing: ['火'],
+      dominant: '金',
     }
     // 金生水: both are neither xi-yong nor ji-shen for 戊(土) medium
     // Actually for medium: xiYong=[火,土], jiShen=[金,木]

@@ -34,8 +34,8 @@ export async function POST(req: Request) {
 
     // ① 字符查询
     const chars = name.split('')
-    const charInfos = chars.map(char => getCharacterInfo(char) || { char, pinyin: '', wuxing: '-', strokes: 0 })
-    console.log('Char infos:', charInfos.map(c => `${c.char}:${c.pinyin}:${c.wuxing}:${c.strokes}`).join(', '))
+    const charInfos = chars.map((char: string) => getCharacterInfo(char) || { char, pinyin: '', wuxing: '-', strokes: 0 })
+    console.log('Char infos:', charInfos.map((c: { char: string; pinyin: string; wuxing: string; strokes: number }) => `${c.char}:${c.pinyin}:${c.wuxing}:${c.strokes}`).join(', '))
 
     // ② 八字五行补益分析
     let wuxingBenefit = null
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
       if (parsed) {
         baZi = calculateBaZi(parsed.year, parsed.month, parsed.day, parsed.hour, parsed.minute)
         if (baZi) {
-          const nameWuxing = charInfos.slice(1).map(c => c.wuxing).filter(w => w !== '-')
+          const nameWuxing = charInfos.slice(1).map((c: { char: string; pinyin: string; wuxing: string; strokes: number }) => c.wuxing).filter((w: string) => w !== '-')
           wuxingBenefit = analyzeWuxingBenefit(baZi, nameWuxing)
         }
       }
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
     const harmonyWarnings = checkHarmony(name)
 
     // ⑥ 字形分析
-    const strokes = charInfos.map(c => c.strokes)
+    const strokes = charInfos.map((c: { char: string; pinyin: string; wuxing: string; strokes: number }) => c.strokes)
     const glyph = analyzeGlyph(nameOnly, strokes.slice(1))
 
     // ⑦ 重名率分析
@@ -110,7 +110,7 @@ export async function POST(req: Request) {
     return new Response(JSON.stringify({
       sessionId: currentSessionId,
       name,
-      pinyin: charInfos.map(c => c.pinyin).filter(Boolean).join(' '),
+      pinyin: charInfos.map((c: { char: string; pinyin: string; wuxing: string; strokes: number }) => c.pinyin).filter(Boolean).join(' '),
       charInfos,
       baZi,
       wuxingBenefit,

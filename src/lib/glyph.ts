@@ -35,7 +35,7 @@ function isInCJKRange(char: string): boolean {
  */
 export function analyzeGlyph(name: string, strokes: number[]): GlyphResult {
   let totalDeduction = 0
-  const chars = [...name]
+  const chars = Array.from(name)
 
   // a. Stroke balance
   let strokeBalance = '笔画均衡'
