@@ -51,6 +51,40 @@ export class ClassicRetriever {
       }
     }
 
+    // 加载唐诗
+    const tangshiPath = path.join(process.cwd(), 'data', 'tangshi.json')
+    if (fs.existsSync(tangshiPath)) {
+      const tangshi = JSON.parse(fs.readFileSync(tangshiPath, 'utf-8'))
+      for (const poem of tangshi) {
+        const source = `唐诗·${poem.author}·${poem.title}`
+        for (const line of poem.content || []) {
+          this.entries.push({ source, content: line })
+        }
+      }
+    }
+
+    // 加载宋词
+    const songciPath = path.join(process.cwd(), 'data', 'songci.json')
+    if (fs.existsSync(songciPath)) {
+      const songci = JSON.parse(fs.readFileSync(songciPath, 'utf-8'))
+      for (const poem of songci) {
+        const source = `宋词·${poem.author}·${poem.title}`
+        for (const line of poem.content || []) {
+          this.entries.push({ source, content: line })
+        }
+      }
+    }
+
+    // 加载论语
+    const lunyuPath = path.join(process.cwd(), 'data', 'lunyu.json')
+    if (fs.existsSync(lunyuPath)) {
+      const lunyu = JSON.parse(fs.readFileSync(lunyuPath, 'utf-8'))
+      for (const item of lunyu) {
+        const source = `论语·${item.chapter || '论语'}`
+        this.entries.push({ source, content: item.content })
+      }
+    }
+
     this.initialized = true
     console.log(`Loaded ${this.entries.length} classic entries`)
   }
@@ -115,6 +149,35 @@ export class ClassicRetriever {
     // 添加取名相关的上下文
     const query = `${theme} 美好 寓意 名字`
     return this.search(query, topK)
+  }
+
+  /**
+   * 混合检索：语义搜索 + 关键词搜索
+   */
+  async hybridSearch(query: string, topK: number = 10): Promise<ClassicSearchResult[]> {
+    await this.initialize()
+
+    // 语义搜索 top 20
+    const semanticResults = await this.search(query, 20)
+
+    // 关键词搜索 top 5
+    const keywordResults = await this.searchByKeyword(query, 5)
+
+    // 合并去重
+    const seen = new Set<string>()
+    const merged: ClassicSearchResult[] = []
+
+    for (const r of [...semanticResults, ...keywordResults]) {
+      const key = `${r.source}:${r.content}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        merged.push(r)
+      }
+    }
+
+    // 按相关度排序，取 topK
+    merged.sort((a, b) => b.relevance - a.relevance)
+    return merged.slice(0, topK)
   }
 }
 
