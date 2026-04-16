@@ -20,6 +20,13 @@ interface NameResult {
     classicReference?: string
     harmonyWarning?: string[]
   }
+  scores?: {
+    wuxingBenefit?: number
+    sancaiWuge?: number
+    phonetic?: number
+    glyph?: number
+    popularity?: number
+  }
   aiAnalysis?: string
 }
 
@@ -197,12 +204,15 @@ const mockNames: NameResult[] = [
   },
 ]
 
-// 分析进度步骤
+// 分析进度步骤（8步）
 const ANALYSIS_STEPS = [
   { key: 'chars', label: '解析汉字信息', duration: 500 },
-  { key: 'wuxing', label: '计算五行属性', duration: 300 },
+  { key: 'wuxing', label: '计算八字五行', duration: 300 },
+  { key: 'benefit', label: '分析五行补益', duration: 400 },
   { key: 'sancai', label: '分析三才五格', duration: 400 },
-  { key: 'phonetic', label: '检查音律搭配', duration: 300 },
+  { key: 'phonetic', label: '分析音律搭配', duration: 300 },
+  { key: 'glyph', label: '分析字形结构', duration: 300 },
+  { key: 'popularity', label: '检查重名率', duration: 200 },
   { key: 'ai', label: 'AI深度分析', duration: 60000 },
 ]
 
@@ -287,6 +297,13 @@ export default function ResultsPage() {
               sancai: data.sancaiWuge ? `天格${data.sancaiWuge.wuge.tianGe} 人格${data.sancaiWuge.wuge.renGe} 地格${data.sancaiWuge.wuge.diGe} 外格${data.sancaiWuge.wuge.waiGe} 总格${data.sancaiWuge.wuge.zongGe}` : undefined,
               phonetic: data.phonetic?.analysis,
               harmonyWarning: data.harmonyWarnings,
+            },
+            scores: {
+              wuxingBenefit: data.wuxingBenefit?.score,
+              sancaiWuge: data.sancaiWugeEnhanced?.score,
+              phonetic: data.phonetic?.score,
+              glyph: data.glyph?.score,
+              popularity: data.popularity?.score,
             },
             aiAnalysis: data.analysis,
           }
@@ -477,6 +494,26 @@ export default function ResultsPage() {
                         {w}
                       </span>
                     ))}
+                  </div>
+                )}
+                {/* 评分概览 */}
+                {names[0].scores && (
+                  <div className="flex justify-center flex-wrap gap-2 mt-3 text-xs text-ink-500">
+                    {names[0].scores.wuxingBenefit != null && (
+                      <span className="px-2 py-0.5 bg-ink-50 rounded-sm">五行 {names[0].scores.wuxingBenefit}/25</span>
+                    )}
+                    {names[0].scores.sancaiWuge != null && (
+                      <span className="px-2 py-0.5 bg-ink-50 rounded-sm">三才 {names[0].scores.sancaiWuge}/20</span>
+                    )}
+                    {names[0].scores.phonetic != null && (
+                      <span className="px-2 py-0.5 bg-ink-50 rounded-sm">音律 {names[0].scores.phonetic}/20</span>
+                    )}
+                    {names[0].scores.glyph != null && (
+                      <span className="px-2 py-0.5 bg-ink-50 rounded-sm">字形 {names[0].scores.glyph}/10</span>
+                    )}
+                    {names[0].scores.popularity != null && (
+                      <span className="px-2 py-0.5 bg-ink-50 rounded-sm">时代 {names[0].scores.popularity}/5</span>
+                    )}
                   </div>
                 )}
               </div>
