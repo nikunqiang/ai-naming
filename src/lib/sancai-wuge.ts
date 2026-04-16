@@ -1,6 +1,8 @@
 // src/lib/sancai-wuge.ts
 import { getStrokeCount } from './character'
-import type { SanCaiResult, WuGeResult } from '@/types'
+import type { SanCaiResult, WuGeResult, WuGeDetailResult, WuGeDetailItem } from '@/types'
+import fs from 'fs'
+import path from 'path'
 
 // 三才五行对应
 const SANCAI_WUXING = '水木木火火土土金金水'
@@ -184,4 +186,97 @@ export function analyzeSanCaiWuGe(fullName: string): { wuge: WuGeResult; sancai:
   const sancai = calculateSanCai(wuge)
 
   return { wuge, sancai }
+}
+
+// ---- 增强三才五格功能 ----
+
+let wugeFortuneData: Record<string, { level: string; desc: string }> | null = null
+function loadWugeFortune() {
+  if (wugeFortuneData) return wugeFortuneData
+  const filePath = path.join(process.cwd(), 'data', 'wuge_fortune.json')
+  wugeFortuneData = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+  return wugeFortuneData
+}
+
+/**
+ * 查询五格数理吉凶
+ * @param num 五格数字
+ */
+export function getWugeFortune(num: number): WuGeDetailItem {
+  const data = loadWugeFortune()
+  // 大于81的映射回1-81范围
+  const mappedNum = num > 81 ? ((num - 1) % 81) + 1 : num
+  const entry = data[String(mappedNum)] || { level: '半吉', desc: '运势一般' }
+
+  return {
+    num: mappedNum,
+    wuxing: numberToWuxing(num),
+    fortune: entry.desc,
+    level: entry.level as WuGeDetailItem['level'],
+  }
+}
+
+/**
+ * 根据三才运势文字判断吉凶等级
+ */
+export function getSanCaiLevel(fortune: string): WuGeDetailResult['sancaiLevel'] {
+  if (/灾祸|不稳/.test(fortune)) return '大凶'
+  if (/被压抑|消极/.test(fortune)) return '凶'
+  if (/但需/.test(fortune)) return '吉'
+  if (/佳|顺利|稳固/.test(fortune)) return '大吉'
+  return '半吉'
+}
+
+/**
+ * 增强版三才五格分析，包含五格详情、三才吉凶等级和评分
+ */
+export function analyzeSanCaiWuGeEnhanced(fullName: string): WuGeDetailResult | null {
+  const basic = analyzeSanCaiWuGe(fullName)
+  if (!basic) return null
+
+  const { wuge, sancai } = basic
+
+  const tianGe = getWugeFortune(wuge.tianGe)
+  const renGe = getWugeFortune(wuge.renGe)
+  const diGe = getWugeFortune(wuge.diGe)
+  const waiGe = getWugeFortune(wuge.waiGe)
+  const zongGe = getWugeFortune(wuge.zongGe)
+
+  const sancaiFortune = sancai.fortune
+  const sancaiLevel = getSanCaiLevel(sancaiFortune)
+
+  // 评分计算：基础10分
+  let score = 10
+
+  // 三才等级加减分
+  const sancaiLevelMap: Record<string, number> = {
+    '大吉': 20,
+    '吉': 17,
+    '半吉': 14,
+    '凶': 6,
+    '大凶': 3,
+  }
+  score = sancaiLevelMap[sancaiLevel] ?? 10
+
+  // 人格吉凶加减分
+  if (renGe.level === '大吉' || renGe.level === '吉') score += 3
+  if (renGe.level === '凶' || renGe.level === '大凶') score -= 5
+
+  // 总格吉凶加减分
+  if (zongGe.level === '大吉' || zongGe.level === '吉') score += 2
+  if (zongGe.level === '凶' || zongGe.level === '大凶') score -= 3
+
+  // 钳制在0-20
+  score = Math.max(0, Math.min(20, score))
+
+  return {
+    tianGe,
+    renGe,
+    diGe,
+    waiGe,
+    zongGe,
+    sancaiFortune,
+    sancaiLevel,
+    score,
+  }
 }
