@@ -9,6 +9,7 @@ interface NameRecord {
   name: string
   surname: string
   given_name: string
+  source: string
   preference: string
   score: number | null
   tag_names: string | null

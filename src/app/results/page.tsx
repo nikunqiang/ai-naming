@@ -320,6 +320,7 @@ function ResultsContent() {
                     meaning: '',
                     wuxing: data.charInfos?.slice(1).map((c: { wuxing: string }) => c.wuxing).filter((w: string) => w !== '-') || [],
                     strokes: data.charInfos?.map((c: { strokes: number }) => c.strokes) || [],
+                    nameId: data.nameId as number | undefined,
                     analysis: {
                       sancai: data.sancaiWuge ? `天格${data.sancaiWuge.wuge.tianGe} 人格${data.sancaiWuge.wuge.renGe} 地格${data.sancaiWuge.wuge.diGe} 外格${data.sancaiWuge.wuge.waiGe} 总格${data.sancaiWuge.wuge.zongGe}` : undefined,
                       phonetic: data.phonetic?.analysis,
@@ -796,7 +797,7 @@ function ResultsContent() {
       </button>
       {showDebug && (
         <div className="fixed right-0 top-0 h-full w-[40%] z-40 shadow-xl">
-          <DebugPanel steps={steps} totalTime={Object.values(steps).reduce((sum: number, s) => sum + (s.duration || 0), 0)} />
+          <DebugPanel steps={steps} totalTime={Object.values(steps).reduce((sum, s) => sum + (s.duration || 0), 0)} />
         </div>
       )}
     </main>

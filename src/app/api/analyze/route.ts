@@ -100,7 +100,7 @@ export async function POST(req: Request) {
         const { enhanced: sancaiWugeEnhanced, basic: sancaiWuge } = sancaiResult
         sendEvent(controller, {
           step: 'sancai', status: 'done', duration: sancaiDuration,
-          summary: `三才${sancaiWugeEnhanced.sancaiLevel}，得分: ${sancaiWugeEnhanced.score}/20`,
+          summary: `三才${sancaiWugeEnhanced!.sancaiLevel}，得分: ${sancaiWugeEnhanced!.score}/20`,
           detail: { sancaiWugeEnhanced, sancaiWuge },
         })
 
@@ -193,22 +193,13 @@ export async function POST(req: Request) {
         // 保存AI回复
         addMessage(currentSessionId, 'assistant', analysisText)
 
-        // 构建完整结果
-        const fullResult = {
-          sessionId: currentSessionId,
-          name,
-          pinyin: charInfos.map((c: { char: string; pinyin: string; wuxing: string; strokes: number }) => c.pinyin).filter(Boolean).join(' '),
-          charInfos, baZi, wuxingBenefit, sancaiWuge, sancaiWugeEnhanced,
-          phonetic, harmonyWarnings, glyph, popularity,
-          analysis: analysisText,
-        }
-
         // 自动保存到记忆
+        let savedNameId: number | undefined
         try {
           const surname = name.charAt(0)
           const givenName = name.slice(1)
           const totalScore = (wuxingBenefit?.score ?? 0) + (sancaiWugeEnhanced?.score ?? 0) + (phonetic?.score ?? 0) + (glyph?.score ?? 0) + (popularity?.score ?? 0)
-          saveName({
+          savedNameId = saveName({
             name, surname, givenName,
             source: 'analyze',
             sessionId: currentSessionId,
@@ -227,7 +218,19 @@ export async function POST(req: Request) {
           console.error('Failed to save name to memory:', e)
         }
 
+        // 构建完整结果
+        const fullResult: Record<string, unknown> = {
+          sessionId: currentSessionId,
+          name,
+          nameId: savedNameId,
+          pinyin: charInfos.map((c: { char: string; pinyin: string; wuxing: string; strokes: number }) => c.pinyin).filter(Boolean).join(' '),
+          charInfos, baZi, wuxingBenefit, sancaiWuge, sancaiWugeEnhanced,
+          phonetic, harmonyWarnings, glyph, popularity,
+          analysis: analysisText,
+        }
+
         // 发送完成事件
+        fullResult.nameId = savedNameId
         sendEvent(controller, { type: 'complete', data: fullResult })
       } catch (error) {
         sendEvent(controller, { step: 'ai', status: 'error', error: String(error) })
