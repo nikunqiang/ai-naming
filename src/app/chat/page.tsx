@@ -171,10 +171,48 @@ export default function ChatPage() {
           }
         }
       }
+
+      // Save generated names to memory
+      saveGeneratedNames(contentRef.current)
     } catch (error) {
       console.error('Chat error:', error)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  /** Parse names from AI response and save to memory */
+  async function saveGeneratedNames(text: string) {
+    const formDataStr = sessionStorage.getItem('namingFormData')
+    if (!formDataStr) return
+    const formData: FormData = JSON.parse(formDataStr)
+    const surname = formData.surname
+    if (!surname) return
+
+    const saved = new Set<string>()
+    // Only match names in 【名字】 format — the AI is instructed to use this format
+    const bracketRegex = /【([^\】]+)】/g
+
+    const names: string[] = []
+    let match: RegExpExecArray | null
+    while ((match = bracketRegex.exec(text)) !== null) {
+      const name = match[1].trim()
+      if (name.startsWith(surname) && name.length >= 2 && name.length <= 3) {
+        names.push(name)
+      }
+    }
+
+    for (const name of names) {
+      if (saved.has(name)) continue
+      saved.add(name)
+      const givenName = name.slice(surname.length)
+      try {
+        await fetch('/api/names', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, surname, givenName, source: 'generate' }),
+        })
+      } catch { /* ignore */ }
     }
   }
 

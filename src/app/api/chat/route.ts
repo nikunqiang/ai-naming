@@ -2,6 +2,7 @@
 import { Anthropic } from '@anthropic-ai/sdk'
 import { loadModelConfig } from '@/lib/model-config'
 import { getSystemPrompt } from '@/lib/llm'
+import { getDislikedChars, getDislikedNames } from '@/lib/db'
 
 export const maxDuration = 60
 
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
     const stream = await client.messages.stream({
       model: config.model,
       max_tokens: 4096,
-      system: getSystemPrompt(),
+      system: getSystemPrompt(getDislikedChars(), getDislikedNames().map(n => n.name)),
       messages: messages.map((m: { role: string; content: string }) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
