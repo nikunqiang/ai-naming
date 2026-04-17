@@ -17,6 +17,7 @@
     "@anthropic-ai/sdk": "^0.88.0",
     "@mastra/core": "^0.1.0",
     "ai": "^3.0.0",
+    "better-sqlite3": "^12.9.0",
     "lunar-javascript": "^1.7.7",
     "next": "14.2.0",
     "ollama-ai-provider": "^1.2.0",
@@ -26,6 +27,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
