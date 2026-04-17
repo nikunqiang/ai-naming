@@ -201,7 +201,7 @@ export default function FormPage() {
               <button
                 key={label}
                 type="button"
-                onClick={() => setFormData({ ...formData, nameLength: value })}
+                onClick={() => setFormData({ ...formData, nameLength: value as NameLength })}
                 className={`flex-1 py-2.5 text-sm rounded-sm border transition-all duration-200
                   ${formData.nameLength === value
                     ? 'border-ink-800 bg-ink-900 text-ink-50'

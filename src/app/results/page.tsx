@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
@@ -217,6 +217,14 @@ const ANALYSIS_STEPS = [
 ]
 
 export default function ResultsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen ink-wash flex items-center justify-center"><p className="text-ink-400">加载中...</p></div>}>
+      <ResultsContent />
+    </Suspense>
+  )
+}
+
+function ResultsContent() {
   const searchParams = useSearchParams()
   const mode = searchParams.get('mode') || 'naming'
   const name = searchParams.get('name')
