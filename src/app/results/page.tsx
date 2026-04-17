@@ -3,6 +3,20 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import DebugPanel from '@/components/DebugPanel'
+import type { AnalysisStep } from '@/types/analysis-events'
+
+interface StepState {
+  status: 'pending' | 'running' | 'done' | 'error'
+  duration?: number
+  summary?: string
+  detail?: Record<string, unknown>
+  prompt?: string
+  systemPrompt?: string
+  chunks?: string
+  result?: string
+  error?: string
+}
 
 type ViewMode = 'card' | 'detail' | 'compare'
 
@@ -13,6 +27,7 @@ interface NameResult {
   meaning: string
   wuxing: string[]
   strokes: number[]
+  nameId?: number
   analysis?: {
     wuxingDetail?: string
     sancai?: string
@@ -236,6 +251,9 @@ function ResultsContent() {
   const [error, setError] = useState<string | null>(null)
   const [currentStep, setCurrentStep] = useState(0)
   const [elapsedTime, setElapsedTime] = useState(0)
+  const [showDebug, setShowDebug] = useState(false)
+  const [steps, setSteps] = useState<Record<string, StepState>>({})
+  const [nameId, setNameId] = useState<number | undefined>(undefined)
   const hasRunRef = useRef(false)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -257,14 +275,6 @@ function ResultsContent() {
         }, 1000)
 
         try {
-          // 模拟进度更新
-          for (let i = 0; i < ANALYSIS_STEPS.length - 1; i++) {
-            setCurrentStep(i)
-            await new Promise(resolve => setTimeout(resolve, ANALYSIS_STEPS[i].duration))
-          }
-
-          setCurrentStep(ANALYSIS_STEPS.length - 1) // AI分析步骤
-
           const controller = new AbortController()
           const timeoutId = setTimeout(() => {
             controller.abort()
@@ -277,46 +287,79 @@ function ResultsContent() {
             signal: controller.signal,
           })
 
-          clearTimeout(timeoutId)
+          if (!response.ok) throw new Error(`分析请求失败: ${response.status}`)
 
-          if (!response.ok) {
-            throw new Error(`分析请求失败: ${response.status}`)
-          }
+          const reader = response.body?.getReader()
+          const decoder = new TextDecoder()
+          if (!reader) throw new Error('No reader')
 
-          const data = await response.json()
-
-          // 转换注音为拼音
-          const convertedPinyin = data.charInfos?.map((c: any) => {
-            const pinyin = c.pinyin || ''
-            // 如果是注音符号，转换为拼音
-            if (pinyin && /[\u3100-\u312F]/.test(pinyin)) {
-              return bopomofoToPinyin(pinyin)
+          let buffer = ''
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue
+              const json = line.slice(6)
+              if (!json) continue
+              try {
+                const event = JSON.parse(json)
+                if (event.type === 'complete') {
+                  const data = event.data
+                  // 转换注音为拼音
+                  const convertedPinyin = data.charInfos?.map((c: any) => {
+                    const pinyin = c.pinyin || ''
+                    if (pinyin && /[\u3100-\u312F]/.test(pinyin)) return bopomofoToPinyin(pinyin)
+                    return pinyin
+                  }).filter(Boolean).join(' ') || ''
+                  const result: NameResult = {
+                    name: data.name as string,
+                    pinyin: convertedPinyin,
+                    meaning: '',
+                    wuxing: data.charInfos?.slice(1).map((c: { wuxing: string }) => c.wuxing).filter((w: string) => w !== '-') || [],
+                    strokes: data.charInfos?.map((c: { strokes: number }) => c.strokes) || [],
+                    analysis: {
+                      sancai: data.sancaiWuge ? `天格${data.sancaiWuge.wuge.tianGe} 人格${data.sancaiWuge.wuge.renGe} 地格${data.sancaiWuge.wuge.diGe} 外格${data.sancaiWuge.wuge.waiGe} 总格${data.sancaiWuge.wuge.zongGe}` : undefined,
+                      phonetic: data.phonetic?.analysis,
+                      harmonyWarning: data.harmonyWarnings,
+                    },
+                    scores: {
+                      wuxingBenefit: data.wuxingBenefit?.score,
+                      sancaiWuge: data.sancaiWugeEnhanced?.score,
+                      phonetic: data.phonetic?.score,
+                      glyph: data.glyph?.score,
+                      popularity: data.popularity?.score,
+                    },
+                    aiAnalysis: data.analysis as string,
+                  }
+                  setNames([result])
+                } else if (event.step) {
+                  setSteps(prev => {
+                    const next = { ...prev }
+                    const stepState = { ...(next[event.step] || { status: 'pending' as const }) }
+                    stepState.status = event.status
+                    if (event.duration != null) stepState.duration = event.duration
+                    if (event.summary) stepState.summary = event.summary
+                    if (event.detail) stepState.detail = event.detail
+                    if (event.prompt) stepState.prompt = event.prompt
+                    if (event.systemPrompt) stepState.systemPrompt = event.systemPrompt
+                    if (event.chunk) stepState.chunks = (stepState.chunks || '') + event.chunk
+                    if (event.result) stepState.result = event.result
+                    if (event.error) stepState.error = event.error
+                    next[event.step] = stepState
+                    return next
+                  })
+                  const stepKeys: AnalysisStep[] = ['chars', 'wuxing', 'benefit', 'sancai', 'phonetic', 'harmony', 'glyph', 'popularity', 'prompt', 'ai']
+                  const idx = stepKeys.indexOf(event.step)
+                  if (idx >= 0) setCurrentStep(idx)
+                }
+              } catch { /* ignore parse errors */ }
             }
-            return pinyin
-          }).filter(Boolean).join(' ') || ''
-
-          const result: NameResult = {
-            name: data.name,
-            pinyin: convertedPinyin,
-            meaning: '',
-            wuxing: data.charInfos?.slice(1).map((c: { wuxing: string }) => c.wuxing).filter((w: string) => w !== '-') || [],
-            strokes: data.charInfos?.map((c: { strokes: number }) => c.strokes) || [],
-            analysis: {
-              sancai: data.sancaiWuge ? `天格${data.sancaiWuge.wuge.tianGe} 人格${data.sancaiWuge.wuge.renGe} 地格${data.sancaiWuge.wuge.diGe} 外格${data.sancaiWuge.wuge.waiGe} 总格${data.sancaiWuge.wuge.zongGe}` : undefined,
-              phonetic: data.phonetic?.analysis,
-              harmonyWarning: data.harmonyWarnings,
-            },
-            scores: {
-              wuxingBenefit: data.wuxingBenefit?.score,
-              sancaiWuge: data.sancaiWugeEnhanced?.score,
-              phonetic: data.phonetic?.score,
-              glyph: data.glyph?.score,
-              popularity: data.popularity?.score,
-            },
-            aiAnalysis: data.analysis,
           }
 
-          setNames([result])
+          clearTimeout(timeoutId)
         } catch (err) {
           if (err instanceof Error && err.name === 'AbortError') {
             setError('请求超时，请稍后重试')
@@ -533,6 +576,32 @@ function ResultsContent() {
                   dangerouslySetInnerHTML={{ __html: renderMarkdown(names[0].aiAnalysis) }}
                 />
               </div>
+
+              {/* 记忆偏好 */}
+              {mode === 'analyze' && !isLoading && names[0] && (
+                <div className="card-elegant p-4 flex items-center gap-4">
+                  <span className="text-sm text-ink-500">已保存到记忆</span>
+                  <div className="flex gap-2">
+                    {(['liked', 'neutral', 'disliked'] as const).map(pref => (
+                      <button
+                        key={pref}
+                        onClick={() => {
+                          if (names[0]?.nameId) {
+                            fetch(`/api/names/${names[0].nameId}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ preference: pref }),
+                            })
+                          }
+                        }}
+                        className={`px-3 py-1 rounded-sm text-sm ${pref === 'liked' ? 'bg-jade-50 text-jade-700' : pref === 'disliked' ? 'bg-red-50 text-red-700' : 'bg-ink-50 text-ink-600'}`}
+                      >
+                        {pref === 'liked' ? '喜欢' : pref === 'disliked' ? '不喜欢' : '一般'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -713,6 +782,21 @@ function ResultsContent() {
               </button>
             </div>
           )}
+        </div>
+      )}
+      {/* Debug panel toggle */}
+      <button
+        onClick={() => setShowDebug(!showDebug)}
+        className="fixed right-4 top-20 z-50 p-2 rounded-sm bg-gray-800 text-gray-300 hover:bg-gray-700"
+        title="调试面板"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L17.25 17.25M6.75 17.25L6.75 6.75M3.75 12L20.25 12" />
+        </svg>
+      </button>
+      {showDebug && (
+        <div className="fixed right-0 top-0 h-full w-[40%] z-40 shadow-xl">
+          <DebugPanel steps={steps} totalTime={Object.values(steps).reduce((sum: number, s) => sum + (s.duration || 0), 0)} />
         </div>
       )}
     </main>
