@@ -69,8 +69,8 @@ export function getModelSync() {
 /**
  * 获取系统提示词（取名模式）
  */
-export function getSystemPrompt(): string {
-  return `你是一位专业、客观的中文取名顾问，精通传统文化和现代审美。
+export function getSystemPrompt(dislikedChars?: string[], dislikedNames?: string[]): string {
+  let prompt = `你是一位专业、客观的中文取名顾问，精通传统文化和现代审美。
 
 你的能力：
 1. 为新生儿取名：根据用户需求生成合适的名字
@@ -115,6 +115,15 @@ export function getSystemPrompt(): string {
 - **注意**：潜在的问题或不足（如谐音、生僻程度等，没有则写"无明显问题"）
 
 请严格按照此格式展示每个推荐的名字，确保拼音准确，并客观指出每个名字的优缺点。`
+
+  if (dislikedChars && dislikedChars.length > 0) {
+    prompt += `\n\n**用户偏好排除规则：**\n- 以下字已被用户标记为不喜欢，请不要在推荐名字中使用：${dislikedChars.join('、')}`
+  }
+  if (dislikedNames && dislikedNames.length > 0) {
+    prompt += `\n- 以下完整名字已被标记为不喜欢，请不要推荐：${dislikedNames.join('、')}`
+  }
+
+  return prompt
 }
 
 /**

@@ -43,7 +43,7 @@ export default function HomePage() {
         </p>
 
         {/* 选择卡片 */}
-        <div className="grid grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-3 gap-4 mb-8">
           <Link
             href="/form"
             className="group card-elegant p-8 flex flex-col items-center justify-center
@@ -95,6 +95,31 @@ export default function HomePage() {
             </span>
             <span className="text-sm text-ink-400 mt-1">
               分析已有名字
+            </span>
+          </Link>
+
+          <Link
+            href="/memory"
+            className="group card-elegant p-8 flex flex-col items-center justify-center
+                       hover:border-ink-600/30"
+            style={{ animationDelay: '0.3s' }}
+          >
+            <div className="w-12 h-12 mb-4 flex items-center justify-center">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                className="w-8 h-8 text-ink-600 group-hover:text-ink-800 transition-colors"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.778-.715-1.652-2.377-2.778-4.313-2.778C5.1 3.75 3 5.765 3 8.25c0 7.79 9.563 13.06 12 14.25 2.437-1.19 12-6.46 12-14.25z" />
+              </svg>
+            </div>
+            <span className="font-serif-cn text-xl text-ink-800 group-hover:text-ink-900 transition-colors">
+              记忆
+            </span>
+            <span className="text-sm text-ink-400 mt-1">
+              名字记录与偏好
             </span>
           </Link>
         </div>
