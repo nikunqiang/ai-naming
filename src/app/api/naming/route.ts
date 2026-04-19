@@ -294,6 +294,7 @@ export async function POST(req: Request) {
               meaningText,
               harmonyWarnings: harmonyWarnings.length > 0 ? harmonyWarnings : undefined,
               nameId,
+              preference: 'neutral',
             })
           }
 

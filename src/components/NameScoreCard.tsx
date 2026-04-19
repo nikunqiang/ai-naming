@@ -4,12 +4,6 @@
 import { useState } from 'react'
 import type { ScoredName } from '@/types/naming-events'
 
-interface NameScoreCardProps {
-  data: ScoredName
-  onSelect?: (name: string) => void
-  selected?: boolean
-}
-
 const SCORE_DIMENSIONS = [
   { key: 'wuxingBenefit' as const, label: '五行补益', max: 25 },
   { key: 'sancaiWuge' as const, label: '三才五格', max: 20 },
@@ -40,42 +34,35 @@ const WUXING_COLORS: Record<string, string> = {
   '土': 'bg-amber-50 text-amber-700',
 }
 
-export default function NameScoreCard({ data, onSelect, selected }: NameScoreCardProps) {
+export default function NameScoreCard({ data, onPreferenceChange }: { data: ScoredName; onPreferenceChange?: (name: string, pref: 'liked' | 'neutral' | 'disliked') => void }) {
   const [expanded, setExpanded] = useState(false)
-  const [pref, setPref] = useState<'liked' | 'neutral' | 'disliked' | null>(null)
+  const [pref, setPref] = useState<'liked' | 'neutral' | 'disliked' | null>(data.preference ?? null)
+  const [saving, setSaving] = useState(false)
 
   const handlePref = (p: 'liked' | 'neutral' | 'disliked') => {
     setPref(p)
+    onPreferenceChange?.(data.name, p)
     if (data.nameId) {
+      setSaving(true)
       fetch(`/api/names/${data.nameId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preference: p }),
-      }).catch(() => {})
+      })
+        .then(res => { if (!res.ok) setPref(data.preference ?? null) })
+        .catch(() => setPref(data.preference ?? null))
+        .finally(() => setSaving(false))
     }
   }
 
   return (
     <div className="card-elegant p-6">
-      {/* Header: name + pinyin + select */}
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <h3 className="font-serif-cn text-3xl text-ink-900 tracking-wider">
-            {data.name}
-          </h3>
-          <p className="text-ink-400 text-sm mt-1">{data.pinyin}</p>
-        </div>
-        {onSelect && (
-          <button
-            onClick={() => onSelect(data.name)}
-            className={`p-2 rounded-sm border transition-all
-              ${selected ? 'border-vermilion-500 bg-vermilion-50 text-vermilion-500' : 'border-ink-200 text-ink-300 hover:border-ink-300'}`}
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-              <path d="M11 17l-5-5 1.41-1.41L11 14.17l7.59-7.59L20 8l-9 9z" />
-            </svg>
-          </button>
-        )}
+      {/* Header: name + pinyin */}
+      <div className="mb-3">
+        <h3 className="font-serif-cn text-3xl text-ink-900 tracking-wider">
+          {data.name}
+        </h3>
+        <p className="text-ink-400 text-sm mt-1">{data.pinyin}</p>
       </div>
 
       {/* Wuxing tags + strokes */}
@@ -129,6 +116,7 @@ export default function NameScoreCard({ data, onSelect, selected }: NameScoreCar
       {(data.classicSource || data.meaningText) && (
         <div>
           <button
+            type="button"
             onClick={() => setExpanded(!expanded)}
             className="text-sm text-ink-400 hover:text-ink-600 transition-colors"
           >
@@ -148,23 +136,23 @@ export default function NameScoreCard({ data, onSelect, selected }: NameScoreCar
       )}
 
       {/* Preference buttons */}
-      {data.nameId && (
-        <div className="flex gap-2 mt-4">
-          {(['liked', 'neutral', 'disliked'] as const).map(p => (
-            <button
-              key={p}
-              onClick={() => handlePref(p)}
-              className={`px-3 py-1 rounded-sm text-sm transition-colors
-                ${pref === p
-                  ? (p === 'liked' ? 'bg-jade-100 text-jade-700' : p === 'disliked' ? 'bg-red-100 text-red-700' : 'bg-ink-100 text-ink-700')
-                  : (p === 'liked' ? 'bg-jade-50 text-jade-600 hover:bg-jade-100' : p === 'disliked' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-ink-50 text-ink-500 hover:bg-ink-100')
-                }`}
-            >
-              {p === 'liked' ? '喜欢' : p === 'disliked' ? '不喜欢' : '一般'}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="flex gap-2 mt-4">
+        {(['liked', 'neutral', 'disliked'] as const).map(p => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => handlePref(p)}
+            disabled={saving}
+            className={`px-3 py-1 rounded-sm text-sm transition-colors
+              ${pref === p
+                ? (p === 'liked' ? 'bg-jade-100 text-jade-700' : p === 'disliked' ? 'bg-red-100 text-red-700' : 'bg-ink-100 text-ink-700')
+                : (p === 'liked' ? 'bg-jade-50 text-jade-600 hover:bg-jade-100' : p === 'disliked' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-ink-50 text-ink-500 hover:bg-ink-100')
+              }`}
+          >
+            {p === 'liked' ? '喜欢' : p === 'disliked' ? '不喜欢' : '一般'}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

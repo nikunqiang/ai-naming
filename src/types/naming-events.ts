@@ -32,6 +32,7 @@ export interface ScoredName {
   meaningText?: string
   harmonyWarnings?: string[]
   nameId?: number
+  preference?: 'liked' | 'neutral' | 'disliked'
 }
 
 /** 流水线阶段 */

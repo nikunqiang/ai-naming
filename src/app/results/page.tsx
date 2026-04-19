@@ -652,8 +652,6 @@ function ResultsContent() {
                       harmonyWarnings: item.analysis?.harmonyWarning,
                       nameId: item.nameId,
                     }}
-                    onSelect={toggleSelect}
-                    selected={selectedNames.includes(item.name)}
                   />
                 ) : (
                   <div key={item.name} className="card-elegant p-6">
