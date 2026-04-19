@@ -54,13 +54,15 @@ export default function ChatPage() {
   const userScrolledUp = useRef(false)
 
   // Pipeline state
-  const [scoredNames, setScoredNames] = useState<ScoredName[]>([])
+  const [scoredNamesMap, setScoredNamesMap] = useState<Record<string, ScoredName[]>>({})
   const [pipelineStage, setPipelineStage] = useState<number>(-1)
   const [pipelineStepStatus, setPipelineStepStatus] = useState<Record<string, { status: string; summary?: string }>>({})
   const [candidateChars, setCandidateChars] = useState<CandidateCharPool | undefined>()
   const [generatingText, setGeneratingText] = useState('')
   const pipelineFormData = useRef<FormData | null>(null)
-  const pipelineResultId = useRef<string | null>(null) // id of the message that holds score cards
+
+  // All scored names across all result messages
+  const allScoredNames = Object.values(scoredNamesMap).flat() // id of the message that holds score cards
 
   useEffect(() => {
     fetch('/api/session', {
@@ -91,7 +93,7 @@ export default function ChatPage() {
     if (!userScrolledUp.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
-  }, [messages, scoredNames])
+  }, [messages, scoredNamesMap])
 
   // Auto-trigger naming pipeline on mount
   useEffect(() => {
@@ -123,7 +125,7 @@ export default function ChatPage() {
   async function runNamingPipeline(formData: FormData) {
     setIsLoading(true)
     setPipelineStage(0)
-    setScoredNames([])
+    setScoredNamesMap({})
     setGeneratingText('')
 
     try {
@@ -167,7 +169,6 @@ export default function ChatPage() {
 
             if (event.type === 'complete') {
               const names: ScoredName[] = event.data.names || []
-              setScoredNames(names)
               setCandidateChars(event.data.candidateChars)
 
               // Save to sessionStorage for results page
@@ -175,7 +176,7 @@ export default function ChatPage() {
 
               // Insert a special message to anchor score cards position
               const resultId = `result_${Date.now()}`
-              pipelineResultId.current = resultId
+              setScoredNamesMap(prev => ({ ...prev, [resultId]: names }))
               const summary = names.length > 0
                 ? `为您推荐了${names.length}个名字，请查看下方评分卡片。`
                 : '未能生成符合条件的名字，请调整需求后重试。'
@@ -252,8 +253,8 @@ export default function ChatPage() {
       contextParts.push(`用户为姓${fd.surname}的${fd.gender === '未定' ? '宝宝' : fd.gender}孩取名，模式：${fd.namingMode}。`)
       if (fd.expectations) contextParts.push(`期望：${fd.expectations}`)
     }
-    if (scoredNames.length > 0) {
-      contextParts.push(`已推荐名字：${scoredNames.map(n => `${n.name}(${n.totalScore}分)`).join('、')}。`)
+    if (allScoredNames.length > 0) {
+      contextParts.push(`已推荐名字：${allScoredNames.map(n => `${n.name}(${n.totalScore}分)`).join('、')}。`)
     }
     if (candidateChars) {
       contextParts.push(`候选字池：${[...candidateChars.primary, ...candidateChars.secondary].slice(0, 30).join('、')}。`)
@@ -298,6 +299,51 @@ export default function ChatPage() {
           }
         }
       }
+
+      // After chat completes, parse 【名字】 and score them
+      const fd = pipelineFormData.current
+      if (fd) {
+        const bracketRegex = /【([^\】]+)】/g
+        const chatNames: string[] = []
+        let m: RegExpExecArray | null
+        while ((m = bracketRegex.exec(contentRef.current)) !== null) {
+          let name = m[1].trim()
+          if (!name.startsWith(fd.surname) && name.length >= 1 && name.length <= 2) {
+            name = fd.surname + name
+          }
+          if (name.startsWith(fd.surname) && name.length >= 2 && name.length <= 3) {
+            chatNames.push(name)
+          }
+        }
+
+        if (chatNames.length > 0) {
+          try {
+            const scoreRes = await fetch('/api/score', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                names: chatNames,
+                surname: fd.surname,
+                birthTime: fd.birthTime,
+              }),
+            })
+            if (scoreRes.ok) {
+              const { names: newScoredNames } = await scoreRes.json() as { names: ScoredName[] }
+              if (newScoredNames.length > 0) {
+                const chatResultId = `result_${Date.now()}`
+                setScoredNamesMap(prev => ({ ...prev, [chatResultId]: newScoredNames }))
+                setMessages(prev => [...prev, {
+                  id: chatResultId,
+                  role: 'assistant',
+                  content: `为您评分了${newScoredNames.length}个新名字：`,
+                }])
+              }
+            }
+          } catch (e) {
+            console.error('Score error:', e)
+          }
+        }
+      }
     } catch (error) {
       console.error('Chat error:', error)
     } finally {
@@ -320,10 +366,10 @@ export default function ChatPage() {
             </svg>
           </Link>
           <h1 className="font-serif-cn text-lg text-ink-700">取名顾问</h1>
-          {scoredNames.length > 0 && (
+          {allScoredNames.length > 0 && (
             <button
               onClick={() => {
-                sessionStorage.setItem('namingPipelineResults', JSON.stringify({ names: scoredNames }))
+                sessionStorage.setItem('namingPipelineResults', JSON.stringify({ names: allScoredNames }))
                 router.push('/results?mode=naming')
               }}
               className="text-sm text-ink-400 hover:text-ink-600 transition-colors"
@@ -331,7 +377,7 @@ export default function ChatPage() {
               查看结果
             </button>
           )}
-          {!scoredNames.length && <div className="w-5" />}
+          {!allScoredNames.length && <div className="w-5" />}
         </div>
       </header>
 
@@ -349,10 +395,10 @@ export default function ChatPage() {
                   )}
                 </div>
               </div>
-              {/* Render score cards right after the pipeline result message */}
-              {message.id === pipelineResultId.current && scoredNames.length > 0 && (
+              {/* Render score cards right after result messages */}
+              {scoredNamesMap[message.id] && scoredNamesMap[message.id].length > 0 && (
                 <div className="space-y-4 mt-4">
-                  {scoredNames.map((name) => (
+                  {scoredNamesMap[message.id].map((name) => (
                     <NameScoreCard key={name.name} data={name} />
                   ))}
                 </div>
@@ -427,7 +473,7 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               className="flex-1 input-field"
-              placeholder={scoredNames.length > 0 ? '继续对话微调...' : '输入您的想法...'}
+              placeholder={allScoredNames.length > 0 ? '继续对话微调...' : '输入您的想法...'}
               disabled={isLoading}
             />
             <button
