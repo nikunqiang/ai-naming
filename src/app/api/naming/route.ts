@@ -93,16 +93,16 @@ export async function POST(req: Request) {
             await retriever.initialize()
 
             const queryParts: string[] = []
-            if (xiYong.length > 0) queryParts.push(xiYong.join(' '))
-            if (body.expectations) queryParts.push(body.expectations)
+            if (xiYong.length > 0) queryParts.push(...xiYong)
+            if (body.expectations) queryParts.push(...body.expectations.split(/[,，、\s]/).filter(Boolean))
 
-            const modeKeywords: Record<string, string> = {
-              '文学': '诗意 典雅 意境',
-              '传统': '吉祥 端正 稳重',
-              '现代': '清新 简洁 时尚',
-              '混合': '美好 寓意 深远',
+            const modeKeywords: Record<string, string[]> = {
+              '文学': ['风', '月', '云', '花', '玉', '兰', '竹', '露', '霜', '雪'],
+              '传统': ['德', '善', '仁', '义', '礼', '正', '明', '光', '安', '和'],
+              '现代': ['晨', '星', '溪', '林', '晴', '悦', '宁', '逸', '朗', '清'],
+              '混合': ['风', '月', '明', '清', '安', '和', '玉', '兰', '溪', '云'],
             }
-            queryParts.push(modeKeywords[body.namingMode] || '美好 寓意')
+            queryParts.push(...(modeKeywords[body.namingMode] || modeKeywords['混合']))
 
             const query = queryParts.join(' ')
 

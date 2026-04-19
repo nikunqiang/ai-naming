@@ -121,20 +121,31 @@ export class ClassicRetriever {
   }
 
   /**
-   * 按关键词搜索
+   * 按关键词搜索（分词匹配：任一关键词命中即返回）
    */
   async searchByKeyword(keyword: string, topK: number = 5): Promise<ClassicSearchResult[]> {
     await this.initialize()
 
+    // Split into individual keywords (by space, comma, etc.)
+    const keywords = keyword.split(/[\s,，、]+/).filter(k => k.length > 0)
+    if (keywords.length === 0) return []
+
     const results: ClassicSearchResult[] = []
+    const seen = new Set<string>()
 
     for (const entry of this.entries) {
-      if (entry.content.includes(keyword)) {
-        results.push({
-          source: entry.source,
-          content: entry.content,
-          relevance: 1.0,
-        })
+      // Check if any keyword is found in the content
+      const matched = keywords.some(kw => entry.content.includes(kw))
+      if (matched) {
+        const key = `${entry.source}:${entry.content}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          results.push({
+            source: entry.source,
+            content: entry.content,
+            relevance: 1.0,
+          })
+        }
         if (results.length >= topK) break
       }
     }
