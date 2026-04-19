@@ -60,6 +60,7 @@ export default function ChatPage() {
   const [candidateChars, setCandidateChars] = useState<CandidateCharPool | undefined>()
   const [generatingText, setGeneratingText] = useState('')
   const pipelineFormData = useRef<FormData | null>(null)
+  const pipelineResultId = useRef<string | null>(null) // id of the message that holds score cards
 
   useEffect(() => {
     fetch('/api/session', {
@@ -80,6 +81,8 @@ export default function ChatPage() {
       userScrolledUp.current = !atBottom
     }
     el.addEventListener('scroll', onScroll, { passive: true })
+    // Initialize: assume at bottom
+    userScrolledUp.current = false
     return () => el.removeEventListener('scroll', onScroll)
   }, [])
 
@@ -170,10 +173,13 @@ export default function ChatPage() {
               // Save to sessionStorage for results page
               sessionStorage.setItem('namingPipelineResults', JSON.stringify({ names }))
 
+              // Insert a special message to anchor score cards position
+              const resultId = `result_${Date.now()}`
+              pipelineResultId.current = resultId
               const summary = names.length > 0
                 ? `为您推荐了${names.length}个名字，请查看下方评分卡片。`
                 : '未能生成符合条件的名字，请调整需求后重试。'
-              setMessages(prev => [...prev, { id: `assistant_${Date.now()}`, role: 'assistant', content: summary }])
+              setMessages(prev => [...prev, { id: resultId, role: 'assistant', content: summary }])
             } else if (event.step) {
               const stepIdx = PIPELINE_STEPS.findIndex(s => s.key === event.step)
               if (stepIdx >= 0) setPipelineStage(stepIdx)
@@ -331,16 +337,26 @@ export default function ChatPage() {
 
       <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
-          {/* Messages */}
+          {/* Messages + Score cards interleaved */}
           {messages.filter(m => m.content !== '').map((message) => (
-            <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] rounded-sm px-4 py-3 ${message.role === 'user' ? 'bg-ink-900 text-ink-50' : 'bg-white border border-ink-100 text-ink-700'}`}>
-                {message.role === 'user' ? (
-                  <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
-                ) : (
-                  <div className="text-sm leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }} />
-                )}
+            <div key={message.id}>
+              <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] rounded-sm px-4 py-3 ${message.role === 'user' ? 'bg-ink-900 text-ink-50' : 'bg-white border border-ink-100 text-ink-700'}`}>
+                  {message.role === 'user' ? (
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                  ) : (
+                    <div className="text-sm leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }} />
+                  )}
+                </div>
               </div>
+              {/* Render score cards right after the pipeline result message */}
+              {message.id === pipelineResultId.current && scoredNames.length > 0 && (
+                <div className="space-y-4 mt-4">
+                  {scoredNames.map((name) => (
+                    <NameScoreCard key={name.name} data={name} />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
 
@@ -383,16 +399,6 @@ export default function ChatPage() {
                   dangerouslySetInnerHTML={{ __html: renderMarkdown(generatingText) }}
                 />
               )}
-            </div>
-          )}
-
-          {/* Score cards */}
-          {scoredNames.length > 0 && (
-            <div className="space-y-4">
-              <h3 className="font-serif-cn text-lg text-ink-700">推荐名字</h3>
-              {scoredNames.map((name) => (
-                <NameScoreCard key={name.name} data={name} />
-              ))}
             </div>
           )}
 
