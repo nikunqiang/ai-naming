@@ -47,9 +47,11 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<string>('')
   const initializedRef = useRef(false)
+  const userScrolledUp = useRef(false)
 
   // Pipeline state
   const [scoredNames, setScoredNames] = useState<ScoredName[]>([])
@@ -69,8 +71,23 @@ export default function ChatPage() {
       .then(data => setSessionId(data.sessionId))
   }, [])
 
+  // Track if user scrolled up manually
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = scrollContainerRef.current
+    if (!el) return
+    const onScroll = () => {
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+      userScrolledUp.current = !atBottom
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Auto-scroll only when user hasn't scrolled up
+  useEffect(() => {
+    if (!userScrolledUp.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [messages, scoredNames])
 
   // Auto-trigger naming pipeline on mount
@@ -288,8 +305,8 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col ink-wash">
-      <header className="sticky top-0 z-50 bg-ink-50/90 backdrop-blur-sm border-b border-ink-100">
+    <main className="h-screen flex flex-col ink-wash">
+      <header className="shrink-0 bg-ink-50/90 backdrop-blur-sm border-b border-ink-100 z-10">
         <div className="max-w-2xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link href="/form" className="text-ink-400 hover:text-ink-600 transition-colors">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
@@ -312,7 +329,7 @@ export default function ChatPage() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
           {/* Messages */}
           {messages.filter(m => m.content !== '').map((message) => (
@@ -396,7 +413,7 @@ export default function ChatPage() {
         </div>
       </div>
 
-      <div className="sticky bottom-0 bg-ink-50/90 backdrop-blur-sm border-t border-ink-100">
+      <div className="shrink-0 bg-ink-50/90 backdrop-blur-sm border-t border-ink-100">
         <form onSubmit={handleSubmit} className="max-w-2xl mx-auto px-6 py-4">
           <div className="flex gap-3">
             <input
