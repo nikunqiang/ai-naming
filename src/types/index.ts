@@ -127,6 +127,9 @@ export interface GlyphResult {
   score: number           // 字形得分（满分10）
 }
 
+// 命名流水线事件类型
+export type { NamingStepEvent, NamingCompleteEvent, ScoredName, NamingRequest, CandidateCharPool, NameScores, NamingStep } from './naming-events'
+
 // 重名率结果
 export interface PopularityResult {
   level: '极低' | '低' | '中等' | '高' | '极高'

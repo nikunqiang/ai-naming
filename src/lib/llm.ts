@@ -66,10 +66,42 @@ export function getModelSync() {
   }
 }
 
+/** getSystemPrompt 选项 */
+export interface SystemPromptOptions {
+  dislikedChars?: string[]
+  dislikedNames?: string[]
+  candidateChars?: string[]
+  ragContext?: string
+  xiYong?: string[]
+  jiShen?: string[]
+  namingMode?: string
+}
+
 /**
  * 获取系统提示词（取名模式）
  */
-export function getSystemPrompt(dislikedChars?: string[], dislikedNames?: string[]): string {
+export function getSystemPrompt(
+  optionsOrChars?: string[] | SystemPromptOptions,
+  dislikedNames?: string[]
+): string {
+  // Backward compat: if first arg is array, treat as old-style (dislikedChars, dislikedNames)
+  let options: SystemPromptOptions
+  if (Array.isArray(optionsOrChars)) {
+    options = { dislikedChars: optionsOrChars, dislikedNames }
+  } else {
+    options = optionsOrChars || {}
+  }
+
+  const {
+    dislikedChars,
+    dislikedNames: dn,
+    candidateChars,
+    ragContext,
+    xiYong,
+    jiShen,
+    namingMode,
+  } = options
+
   let prompt = `你是一位专业、客观的中文取名顾问，精通传统文化和现代审美。
 
 你的能力：
@@ -116,11 +148,41 @@ export function getSystemPrompt(dislikedChars?: string[], dislikedNames?: string
 
 请严格按照此格式展示每个推荐的名字，确保拼音准确，并客观指出每个名字的优缺点。`
 
+  // 候选字池约束
+  if (candidateChars && candidateChars.length > 0) {
+    prompt += `\n\n**候选字约束：**\n请从以下候选字中组合名字：${candidateChars.join('、')}。\n这些字已根据五行喜用神筛选，优先使用喜用神匹配的字。不要使用候选字池以外的字。`
+  }
+
+  // RAG诗词典故
+  if (ragContext) {
+    prompt += `\n\n**可参考的诗词典故：**\n${ragContext}`
+  }
+
+  // 喜用神/忌神
+  if (xiYong && xiYong.length > 0) {
+    prompt += `\n\n**命理约束：**\n- 喜用神：${xiYong.join('、')}（名字五行宜包含喜用神）\n- 忌神：${jiShen?.join('、') || '无'}（名字五行宜避免忌神）`
+  }
+
+  // 取名模式强化
+  if (namingMode) {
+    const modeGuidance: Record<string, string> = {
+      '传统': '请重点考虑五行八字和三才五格，确保命理配置优良。',
+      '文学': '请重点从诗词典故中取意，注重意境美和音律美。',
+      '现代': '请注重实用性，选择易读易写、避免生僻的字，兼顾现代审美。',
+      '混合': '请综合考虑命理、文化、实用性，平衡各维度。',
+    }
+    if (modeGuidance[namingMode]) {
+      prompt += `\n\n**模式强调：**${modeGuidance[namingMode]}`
+    }
+  }
+
+  // 排除规则
   if (dislikedChars && dislikedChars.length > 0) {
     prompt += `\n\n**用户偏好排除规则：**\n- 以下字已被用户标记为不喜欢，请不要在推荐名字中使用：${dislikedChars.join('、')}`
   }
-  if (dislikedNames && dislikedNames.length > 0) {
-    prompt += `\n- 以下完整名字已被标记为不喜欢，请不要推荐：${dislikedNames.join('、')}`
+  const effectiveDislikedNames = dn || dislikedNames
+  if (effectiveDislikedNames && effectiveDislikedNames.length > 0) {
+    prompt += `\n- 以下完整名字已被标记为不喜欢，请不要推荐：${effectiveDislikedNames.join('、')}`
   }
 
   return prompt

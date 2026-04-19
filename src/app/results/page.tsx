@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import DebugPanel from '@/components/DebugPanel'
+import NameScoreCard from '@/components/NameScoreCard'
 import type { AnalysisStep } from '@/types/analysis-events'
 
 interface StepState {
@@ -381,7 +382,31 @@ function ResultsContent() {
           setIsLoading(false)
         }
       } else if (mode === 'naming') {
-        setNames(mockNames)
+        // Read pipeline results from sessionStorage
+        const pipelineResultsStr = sessionStorage.getItem('namingPipelineResults')
+        if (pipelineResultsStr) {
+          try {
+            const pipelineResults = JSON.parse(pipelineResultsStr)
+            const realNames: NameResult[] = (pipelineResults.names || []).map((n: any) => ({
+              name: n.name,
+              pinyin: n.pinyin,
+              source: n.classicSource,
+              meaning: n.meaningText || '',
+              wuxing: n.wuxingTags || [],
+              strokes: n.strokes || [],
+              nameId: n.nameId,
+              scores: n.scores,
+              analysis: {
+                harmonyWarning: n.harmonyWarnings,
+              },
+            }))
+            setNames(realNames.length > 0 ? realNames : mockNames)
+          } catch {
+            setNames(mockNames)
+          }
+        } else {
+          setNames(mockNames)
+        }
       }
     }
 
@@ -609,69 +634,53 @@ function ResultsContent() {
           {/* 取名模式：卡片视图 */}
           {mode === 'naming' && viewMode === 'card' && (
             <div className="space-y-4">
-              {names.map((item, index) => (
-                <div
-                  key={item.name}
-                  className="card-elegant p-6"
-                  style={{ animationDelay: `${index * 0.1}s` }}
-                >
-                  {/* 名字和拼音 */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="font-serif-cn text-3xl text-ink-900 tracking-wider">
-                        {item.name}
-                      </h3>
-                      <p className="text-ink-400 text-sm mt-1">{item.pinyin}</p>
-                    </div>
-                    <button
-                      onClick={() => toggleSelect(item.name)}
-                      className={`p-2 rounded-sm border transition-all
-                        ${selectedNames.includes(item.name)
-                          ? 'border-vermilion-500 bg-vermilion-50 text-vermilion-500'
-                          : 'border-ink-200 text-ink-300 hover:border-ink-300'
-                        }`}
-                    >
-                      <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                        <path d="M11 17l-5-5 1.41-1.41L11 14.17l7.59-7.59L20 8l-9 9z" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  {/* 出处和寓意 */}
-                  {item.source && (
-                    <p className="text-vermilion-600 text-sm mb-2 font-light italic">
-                      「{item.source}」
-                    </p>
-                  )}
-                  <p className="text-ink-600 mb-4">{item.meaning}</p>
-
-                  {/* 五行和笔画 */}
-                  <div className="flex gap-6 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="text-ink-400">五行</span>
-                      <div className="flex gap-1">
-                        {item.wuxing.map((w, i) => (
-                          <span
-                            key={i}
-                            className={`px-2 py-0.5 rounded-sm text-xs
-                              ${w === '金' ? 'bg-ink-100 text-ink-700' : ''}
-                              ${w === '木' ? 'bg-emerald-50 text-emerald-700' : ''}
-                              ${w === '水' ? 'bg-blue-50 text-blue-700' : ''}
-                              ${w === '火' ? 'bg-red-50 text-red-700' : ''}
-                              ${w === '土' ? 'bg-amber-50 text-amber-700' : ''}
-                            `}
-                          >
-                            {w}
-                          </span>
-                        ))}
+              {names.map((item) => (
+                item.scores ? (
+                  <NameScoreCard
+                    key={item.name}
+                    data={{
+                      name: item.name,
+                      surname: item.name.charAt(0),
+                      givenName: item.name.slice(1),
+                      pinyin: item.pinyin,
+                      scores: item.scores as any,
+                      totalScore: Object.values(item.scores).reduce((sum: number, s: any) => sum + (s || 0), 0),
+                      wuxingTags: item.wuxing,
+                      strokes: item.strokes,
+                      classicSource: item.source,
+                      meaningText: item.meaning,
+                      harmonyWarnings: item.analysis?.harmonyWarning,
+                      nameId: item.nameId,
+                    }}
+                    onSelect={toggleSelect}
+                    selected={selectedNames.includes(item.name)}
+                  />
+                ) : (
+                  <div key={item.name} className="card-elegant p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="font-serif-cn text-3xl text-ink-900 tracking-wider">{item.name}</h3>
+                        <p className="text-ink-400 text-sm mt-1">{item.pinyin}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-ink-400">笔画</span>
-                      <span className="text-ink-600">{item.strokes.join('-')}</span>
+                    {item.source && <p className="text-vermilion-600 text-sm mb-2 font-light italic">「{item.source}」</p>}
+                    <p className="text-ink-600 mb-4">{item.meaning}</p>
+                    <div className="flex gap-6 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-ink-400">五行</span>
+                        <div className="flex gap-1">
+                          {item.wuxing.map((w, i) => (
+                            <span key={i} className={`px-2 py-0.5 rounded-sm text-xs ${w === '金' ? 'bg-ink-100 text-ink-700' : w === '木' ? 'bg-emerald-50 text-emerald-700' : w === '水' ? 'bg-blue-50 text-blue-700' : w === '火' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>{w}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-ink-400">笔画</span>
+                        <span className="text-ink-600">{item.strokes.join('-')}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )
               ))}
             </div>
           )}

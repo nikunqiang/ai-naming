@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import NameScoreCard from '@/components/NameScoreCard'
+import type { ScoredName, CandidateCharPool } from '@/types/naming-events'
 
 interface Message {
   id: string
@@ -21,20 +23,21 @@ interface FormData {
   nameLength?: 1 | 2 | '不限'
 }
 
-// 简单的 Markdown 渲染
+const PIPELINE_STEPS = [
+  { key: 'filtering', label: '命理筛选候选字' },
+  { key: 'rag', label: '检索诗词典故' },
+  { key: 'generating', label: 'AI生成名字' },
+  { key: 'scoring', label: '六维评分验证' },
+] as const
+
 function renderMarkdown(text: string): string {
   return text
-    // 粗体 **text**
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // 标题 ### text
     .replace(/^### (.+)$/gm, '<h4 class="font-semibold text-ink-800 mt-3 mb-1">$1</h4>')
     .replace(/^## (.+)$/gm, '<h3 class="font-semibold text-ink-800 mt-4 mb-2">$1</h3>')
     .replace(/^# (.+)$/gm, '<h2 class="font-semibold text-ink-800 mt-4 mb-2">$1</h2>')
-    // 列表 - item 或 * item
     .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc text-ink-600">$1</li>')
-    // 数字列表 1. item
     .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal text-ink-600">$2</li>')
-    // 换行
     .replace(/\n/g, '<br/>')
 }
 
@@ -48,6 +51,13 @@ export default function ChatPage() {
   const contentRef = useRef<string>('')
   const initializedRef = useRef(false)
 
+  // Pipeline state
+  const [scoredNames, setScoredNames] = useState<ScoredName[]>([])
+  const [pipelineStage, setPipelineStage] = useState<number>(-1)
+  const [pipelineStepStatus, setPipelineStepStatus] = useState<Record<string, { status: string; summary?: string }>>({})
+  const [candidateChars, setCandidateChars] = useState<CandidateCharPool | undefined>()
+  const [generatingText, setGeneratingText] = useState('')
+
   useEffect(() => {
     fetch('/api/session', {
       method: 'POST',
@@ -60,11 +70,10 @@ export default function ChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, scoredNames])
 
-  // 加载表单数据并发送初始消息
+  // Auto-trigger naming pipeline on mount
   useEffect(() => {
-    // 使用 ref 防止重复执行
     if (initializedRef.current) return
     initializedRef.current = true
 
@@ -74,33 +83,103 @@ export default function ChatPage() {
     const formData: FormData = JSON.parse(formDataStr)
     if (!formData.surname || !formData.gender) return
 
-    // 构建初始消息
     const parts: string[] = []
     parts.push(`我想为姓${formData.surname}的${formData.gender === '未定' ? '宝宝' : formData.gender}孩取名。`)
-
-    if (formData.motherSurname) {
-      parts.push(`母亲姓${formData.motherSurname}，可以考虑组合。`)
-    }
-
-    if (formData.expectations) {
-      parts.push(`期望寓意：${formData.expectations}。`)
-    }
-
-    if (formData.avoidChars) {
-      parts.push(`避免用字：${formData.avoidChars}。`)
-    }
-
+    if (formData.expectations) parts.push(`期望寓意：${formData.expectations}。`)
     parts.push(`取名模式：${formData.namingMode}。`)
-    parts.push(`请帮我推荐几个好名字。`)
 
-    const initialMessage = parts.join('')
+    const displayMsg = parts.join('')
+    setMessages(prev => [...prev, { id: `user_${Date.now()}`, role: 'user', content: displayMsg }])
 
-    // 自动发送初始消息
     setTimeout(() => {
-      sendMessage(initialMessage)
+      runNamingPipeline(formData)
     }, 300)
-  }, []) // 空依赖数组
+  }, [])
 
+  /** Run the four-stage naming pipeline */
+  async function runNamingPipeline(formData: FormData) {
+    setIsLoading(true)
+    setPipelineStage(0)
+    setScoredNames([])
+    setGeneratingText('')
+
+    try {
+      const response = await fetch('/api/naming', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          surname: formData.surname,
+          gender: formData.gender,
+          birthTime: formData.birthTime,
+          expectations: formData.expectations,
+          avoidChars: formData.avoidChars,
+          namingMode: formData.namingMode,
+          nameLength: formData.nameLength,
+          motherSurname: formData.motherSurname,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Pipeline request failed')
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No reader')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const json = line.slice(6)
+          if (!json) continue
+          try {
+            const event = JSON.parse(json)
+
+            if (event.type === 'complete') {
+              const names: ScoredName[] = event.data.names || []
+              setScoredNames(names)
+              setCandidateChars(event.data.candidateChars)
+
+              // Save to sessionStorage for results page
+              sessionStorage.setItem('namingPipelineResults', JSON.stringify({ names }))
+
+              const summary = names.length > 0
+                ? `为您推荐了${names.length}个名字，请查看下方评分卡片。`
+                : '未能生成符合条件的名字，请调整需求后重试。'
+              setMessages(prev => [...prev, { id: `assistant_${Date.now()}`, role: 'assistant', content: summary }])
+            } else if (event.step) {
+              const stepIdx = PIPELINE_STEPS.findIndex(s => s.key === event.step)
+              if (stepIdx >= 0) setPipelineStage(stepIdx)
+
+              setPipelineStepStatus(prev => ({
+                ...prev,
+                [event.step]: { status: event.status, summary: event.summary },
+              }))
+
+              if (event.step === 'generating' && event.chunk) {
+                setGeneratingText(prev => prev + event.chunk)
+              }
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
+    } catch (error) {
+      console.error('Pipeline error:', error)
+      setMessages(prev => [...prev, { id: `assistant_${Date.now()}`, role: 'assistant', content: '取名服务暂时不可用，请稍后重试。' }])
+    } finally {
+      setIsLoading(false)
+      setPipelineStage(-1)
+    }
+  }
+
+  /** Send chat message (for refinement after pipeline) */
   const sendMessage = async (content: string) => {
     if (!content.trim() || isLoading) return
 
@@ -116,27 +195,26 @@ export default function ChatPage() {
     setIsLoading(true)
     contentRef.current = ''
 
-    setMessages(prev => [...prev, {
-      id: assistantId,
-      role: 'assistant',
-      content: '',
-    }])
+    setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '' }])
+
+    const contextMessage = scoredNames.length > 0
+      ? `之前为你推荐了以下名字：${scoredNames.map(n => n.name).join('、')}。${candidateChars ? `候选字池：${candidateChars.primary.slice(0, 20).join('、')}。` : ''}请在此基础上微调。`
+      : ''
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...messages, userMessage].map(m => ({
-            role: m.role,
-            content: m.content,
-          })),
+          messages: [
+            ...(contextMessage ? [{ role: 'user', content: contextMessage }] : []),
+            ...messages,
+            userMessage,
+          ].map(m => ({ role: m.role, content: m.content })),
         }),
       })
 
-      if (!response.ok) {
-        throw new Error('API request failed')
-      }
+      if (!response.ok) throw new Error('API request failed')
 
       const reader = response.body?.getReader()
       if (!reader) throw new Error('No reader')
@@ -157,23 +235,11 @@ export default function ChatPage() {
             try {
               const text = JSON.parse(line.slice(2))
               contentRef.current += text
-              setMessages(prev => {
-                const updated = prev.map(m =>
-                  m.id === assistantId
-                    ? { ...m, content: contentRef.current }
-                    : m
-                )
-                return updated
-              })
-            } catch {
-              // ignore parse errors
-            }
+              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: contentRef.current } : m))
+            } catch { /* ignore */ }
           }
         }
       }
-
-      // Save generated names to memory
-      saveGeneratedNames(contentRef.current)
     } catch (error) {
       console.error('Chat error:', error)
     } finally {
@@ -181,48 +247,9 @@ export default function ChatPage() {
     }
   }
 
-  /** Parse names from AI response and save to memory */
-  async function saveGeneratedNames(text: string) {
-    const formDataStr = sessionStorage.getItem('namingFormData')
-    if (!formDataStr) return
-    const formData: FormData = JSON.parse(formDataStr)
-    const surname = formData.surname
-    if (!surname) return
-
-    const saved = new Set<string>()
-    // Only match names in 【名字】 format — the AI is instructed to use this format
-    const bracketRegex = /【([^\】]+)】/g
-
-    const names: string[] = []
-    let match: RegExpExecArray | null
-    while ((match = bracketRegex.exec(text)) !== null) {
-      const name = match[1].trim()
-      if (name.startsWith(surname) && name.length >= 2 && name.length <= 3) {
-        names.push(name)
-      }
-    }
-
-    for (const name of names) {
-      if (saved.has(name)) continue
-      saved.add(name)
-      const givenName = name.slice(surname.length)
-      try {
-        await fetch('/api/names', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, surname, givenName, source: 'generate' }),
-        })
-      } catch { /* ignore */ }
-    }
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     await sendMessage(input)
-  }
-
-  const handleGenerateNames = () => {
-    router.push('/results')
   }
 
   return (
@@ -235,42 +262,90 @@ export default function ChatPage() {
             </svg>
           </Link>
           <h1 className="font-serif-cn text-lg text-ink-700">取名顾问</h1>
-          <button
-            onClick={handleGenerateNames}
-            className="text-sm text-ink-400 hover:text-ink-600 transition-colors"
-          >
-            生成名字
-          </button>
+          {scoredNames.length > 0 && (
+            <button
+              onClick={() => {
+                sessionStorage.setItem('namingPipelineResults', JSON.stringify({ names: scoredNames }))
+                router.push('/results?mode=naming')
+              }}
+              className="text-sm text-ink-400 hover:text-ink-600 transition-colors"
+            >
+              查看结果
+            </button>
+          )}
+          {!scoredNames.length && <div className="w-5" />}
         </div>
       </header>
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
+          {/* Messages */}
           {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-sm px-4 py-3 ${
-                  message.role === 'user'
-                    ? 'bg-ink-900 text-ink-50'
-                    : 'bg-white border border-ink-100 text-ink-700'
-                }`}
-              >
+            <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[85%] rounded-sm px-4 py-3 ${message.role === 'user' ? 'bg-ink-900 text-ink-50' : 'bg-white border border-ink-100 text-ink-700'}`}>
                 {message.role === 'user' ? (
                   <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
                 ) : (
-                  <div
-                    className="text-sm leading-relaxed prose prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-                  />
+                  <div className="text-sm leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }} />
                 )}
               </div>
             </div>
           ))}
 
-          {isLoading && messages[messages.length - 1]?.content === '' && (
+          {/* Pipeline progress */}
+          {isLoading && pipelineStage >= 0 && (
+            <div className="card-elegant p-6">
+              <div className="space-y-3">
+                {PIPELINE_STEPS.map((step, index) => {
+                  const status = pipelineStepStatus[step.key]?.status
+                  const summary = pipelineStepStatus[step.key]?.summary
+                  return (
+                    <div key={step.key} className={`flex items-center gap-3 p-2 rounded-sm transition-all ${
+                      status === 'done' ? 'bg-jade-50 text-jade-700' :
+                      index === pipelineStage ? 'bg-ink-100 text-ink-800' :
+                      'text-ink-400'
+                    }`}>
+                      <span className="w-6 h-6 flex items-center justify-center">
+                        {status === 'done' ? (
+                          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-jade-500">
+                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                          </svg>
+                        ) : index === pipelineStage ? (
+                          <div className="w-4 h-4 border-2 border-ink-600 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <span className="w-4 h-4 rounded-full border border-ink-300" />
+                        )}
+                      </span>
+                      <span className="flex-1 text-sm">{step.label}</span>
+                      {status === 'done' && summary && (
+                        <span className="text-xs text-ink-400">{summary}</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Streaming text during generating stage */}
+              {generatingText && (
+                <div className="mt-4 text-sm text-ink-600 leading-relaxed prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(generatingText) }}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Score cards */}
+          {scoredNames.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="font-serif-cn text-lg text-ink-700">推荐名字</h3>
+              {scoredNames.map((name) => (
+                <NameScoreCard key={name.name} data={name} />
+              ))}
+            </div>
+          )}
+
+          {/* Loading dots (for chat, not pipeline) */}
+          {isLoading && pipelineStage < 0 && messages[messages.length - 1]?.content === '' && (
             <div className="flex justify-start">
               <div className="bg-white border border-ink-100 rounded-sm px-4 py-3">
                 <div className="flex gap-1">
@@ -294,15 +369,13 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               className="flex-1 input-field"
-              placeholder="输入您的想法..."
+              placeholder={scoredNames.length > 0 ? '继续对话微调...' : '输入您的想法...'}
               disabled={isLoading}
             />
             <button
               type="submit"
               disabled={!input.trim() || isLoading}
-              className="px-4 py-3 bg-ink-900 text-ink-50 rounded-sm
-                       disabled:opacity-40 disabled:cursor-not-allowed
-                       hover:bg-ink-800 transition-colors"
+              className="px-4 py-3 bg-ink-900 text-ink-50 rounded-sm disabled:opacity-40 disabled:cursor-not-allowed hover:bg-ink-800 transition-colors"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.176A5.968 5.968 0 0121 12a5.967 5.967 0 01-8.977 5.424L3 21l2.176-6.731A5.968 5.968 0 016 12z" />
