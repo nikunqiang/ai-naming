@@ -8,8 +8,17 @@ export const maxDuration = 60
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json()
+    const { messages, pipelineContext } = await req.json()
     const config = loadModelConfig()
+
+    // Build system prompt with pipeline context if available
+    const systemPrompt = getSystemPrompt({
+      dislikedChars: getDislikedChars(),
+      dislikedNames: getDislikedNames().map(n => n.name),
+    })
+    const fullSystem = pipelineContext
+      ? `${systemPrompt}\n\n**当前取名上下文：**\n${pipelineContext}\n\n请基于以上上下文继续为用户服务。如果用户要求调整，请推荐新的名字（使用【名字】格式）或对已有名字给出建议。`
+      : systemPrompt
 
     const client = new Anthropic({
       apiKey: process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_API_KEY,
@@ -19,7 +28,7 @@ export async function POST(req: Request) {
     const stream = await client.messages.stream({
       model: config.model,
       max_tokens: 4096,
-      system: getSystemPrompt(getDislikedChars(), getDislikedNames().map(n => n.name)),
+      system: fullSystem,
       messages: messages.map((m: { role: string; content: string }) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,

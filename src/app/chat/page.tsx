@@ -57,6 +57,7 @@ export default function ChatPage() {
   const [pipelineStepStatus, setPipelineStepStatus] = useState<Record<string, { status: string; summary?: string }>>({})
   const [candidateChars, setCandidateChars] = useState<CandidateCharPool | undefined>()
   const [generatingText, setGeneratingText] = useState('')
+  const pipelineFormData = useRef<FormData | null>(null)
 
   useEffect(() => {
     fetch('/api/session', {
@@ -82,6 +83,8 @@ export default function ChatPage() {
 
     const formData: FormData = JSON.parse(formDataStr)
     if (!formData.surname || !formData.gender) return
+
+    pipelineFormData.current = formData
 
     const parts: string[] = []
     parts.push(`我想为姓${formData.surname}的${formData.gender === '未定' ? '宝宝' : formData.gender}孩取名。`)
@@ -197,9 +200,41 @@ export default function ChatPage() {
 
     setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '' }])
 
-    const contextMessage = scoredNames.length > 0
-      ? `之前为你推荐了以下名字：${scoredNames.map(n => n.name).join('、')}。${candidateChars ? `候选字池：${candidateChars.primary.slice(0, 20).join('、')}。` : ''}请在此基础上微调。`
-      : ''
+    // Build clean chat history: only user/assistant exchanges after pipeline
+    // Exclude pipeline summary messages to avoid confusing the LLM
+    const chatHistory = messages
+      .filter(m => m.content !== '')
+      .map(m => ({ role: m.role, content: m.content }))
+
+    // Ensure alternating user/assistant roles (merge consecutive same-role messages)
+    const mergedHistory: Array<{ role: string; content: string }> = []
+    for (const m of chatHistory) {
+      const last = mergedHistory[mergedHistory.length - 1]
+      if (last && last.role === m.role) {
+        last.content += '\n' + m.content
+      } else {
+        mergedHistory.push({ ...m })
+      }
+    }
+
+    // Ensure first message is from user
+    if (mergedHistory.length > 0 && mergedHistory[0].role !== 'user') {
+      mergedHistory.shift()
+    }
+
+    // Build system context from pipeline results
+    const fd = pipelineFormData.current
+    const contextParts: string[] = []
+    if (fd) {
+      contextParts.push(`用户为姓${fd.surname}的${fd.gender === '未定' ? '宝宝' : fd.gender}孩取名，模式：${fd.namingMode}。`)
+      if (fd.expectations) contextParts.push(`期望：${fd.expectations}`)
+    }
+    if (scoredNames.length > 0) {
+      contextParts.push(`已推荐名字：${scoredNames.map(n => `${n.name}(${n.totalScore}分)`).join('、')}。`)
+    }
+    if (candidateChars) {
+      contextParts.push(`候选字池：${[...candidateChars.primary, ...candidateChars.secondary].slice(0, 30).join('、')}。`)
+    }
 
     try {
       const response = await fetch('/api/chat', {
@@ -207,10 +242,10 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [
-            ...(contextMessage ? [{ role: 'user', content: contextMessage }] : []),
-            ...messages,
-            userMessage,
-          ].map(m => ({ role: m.role, content: m.content })),
+            ...mergedHistory,
+            { role: 'user' as const, content: userMessage.content },
+          ],
+          pipelineContext: contextParts.length > 0 ? contextParts.join('') : undefined,
         }),
       })
 
@@ -280,7 +315,7 @@ export default function ChatPage() {
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto px-6 py-6 space-y-6">
           {/* Messages */}
-          {messages.map((message) => (
+          {messages.filter(m => m.content !== '').map((message) => (
             <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[85%] rounded-sm px-4 py-3 ${message.role === 'user' ? 'bg-ink-900 text-ink-50' : 'bg-white border border-ink-100 text-ink-700'}`}>
                 {message.role === 'user' ? (
