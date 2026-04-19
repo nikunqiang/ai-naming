@@ -77,7 +77,7 @@ export async function POST(req: Request) {
 
         sendEvent(controller, {
           step: 'filtering', status: 'done', duration: filterDuration,
-          summary: `候选字池：${candidatePool.primary.length}个喜用字 + ${candidatePool.secondary.length}个通用字${xiYong.length > 0 ? `，喜用神：${xiYong.join('、')}` : ''}`,
+          summary: `候选字池：${candidatePool.primary.length > 0 ? `${candidatePool.primary.length}个喜用字 + ` : ''}${candidatePool.secondary.length}个通用字${xiYong.length > 0 ? `，喜用神：${xiYong.join('、')}` : ''}`,
           detail: { poolSize: candidatePool.primary.length + candidatePool.secondary.length, xiYong, jiShen },
         })
 

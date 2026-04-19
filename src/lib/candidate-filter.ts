@@ -64,8 +64,8 @@ export function buildGenericCharPool(
   }
 
   return {
-    primary: chars,
-    secondary: [],
+    primary: [],
+    secondary: chars,
     xiYong: [],
     jiShen: [],
   }
