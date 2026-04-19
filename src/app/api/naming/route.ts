@@ -105,7 +105,9 @@ export async function POST(req: Request) {
             queryParts.push(modeKeywords[body.namingMode] || '美好 寓意')
 
             const query = queryParts.join(' ')
-            ragResults = await retriever.hybridSearch(query, 12)
+
+            // Use keyword search (fast) instead of embedding search (slow/fails without Ollama)
+            ragResults = await retriever.searchByKeyword(query, 12)
           } catch (err) {
             console.error('RAG error:', err)
           }
@@ -171,13 +173,19 @@ export async function POST(req: Request) {
         await llmStream.finalMessage()
         const genDuration = Date.now() - genStart
 
-        // Parse 【名字】 format
+        // Parse 【名字】 format — LLM may output with or without surname
         const bracketRegex = /【([^\】]+)】/g
         const rawNames: string[] = []
+        const seenNames = new Set<string>()
         let match: RegExpExecArray | null
         while ((match = bracketRegex.exec(fullText)) !== null) {
-          const name = match[1].trim()
-          if (name.startsWith(body.surname) && name.length >= 2 && name.length <= 3) {
+          let name = match[1].trim()
+          // If name doesn't start with surname, prepend it
+          if (!name.startsWith(body.surname) && name.length >= 1 && name.length <= 2) {
+            name = body.surname + name
+          }
+          if (name.startsWith(body.surname) && name.length >= 2 && name.length <= 3 && !seenNames.has(name)) {
+            seenNames.add(name)
             rawNames.push(name)
           }
         }
