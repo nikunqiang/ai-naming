@@ -183,6 +183,11 @@ export function listNames(filters: {
   ).all({ ...params, limit, offset }) as Array<Record<string, unknown>>
 }
 
+/** 获取所有已保存的名字（全名） */
+export function getSavedNames(): string[] {
+  return (getDB().prepare("SELECT name FROM names").all() as Array<{ name: string }>).map(r => r.name)
+}
+
 /** 获取不喜欢的名字列表 */
 export function getDislikedNames(): Array<{ name: string; given_name: string }> {
   return getDB().prepare("SELECT name, given_name FROM names WHERE preference = 'disliked'").all() as Array<{ name: string; given_name: string }>

@@ -8,7 +8,7 @@ import { analyzePhonetic, checkHarmony } from '@/lib/phonetic'
 import { calculateBaZi, parseBirthTime, analyzeWuxingBenefit } from '@/lib/wuxing'
 import { analyzeGlyph } from '@/lib/glyph'
 import { analyzeNamePopularity } from '@/lib/popularity'
-import { saveName, getDislikedChars, getDislikedNames } from '@/lib/db'
+import { saveName, getDislikedChars, getDislikedNames, getSavedNames } from '@/lib/db'
 import { buildCandidateCharPool, buildGenericCharPool } from '@/lib/candidate-filter'
 import { getRetriever } from '@/lib/rag'
 import type { NamingStepEvent, NamingCompleteEvent, ScoredName, NamingRequest, CandidateCharPool } from '@/types/naming-events'
@@ -128,15 +128,8 @@ export async function POST(req: Request) {
         sendEvent(controller, { step: 'generating', status: 'running' })
 
         const allCandidateChars = [...candidatePool.primary, ...candidatePool.secondary]
-        const systemPrompt = getSystemPrompt({
-          dislikedChars: getDislikedChars(),
-          dislikedNames: getDislikedNames().map(n => n.name),
-          candidateChars: allCandidateChars,
-          ragContext,
-          xiYong,
-          jiShen,
-          namingMode: body.namingMode,
-        })
+        const savedNames = getSavedNames()
+        const dislikedNamesList = getDislikedNames().map(n => n.name)
 
         const userParts: string[] = []
         userParts.push(`我想为姓${body.surname}的${body.gender === '未定' ? '宝宝' : body.gender}孩取名。`)
@@ -155,139 +148,174 @@ export async function POST(req: Request) {
           baseURL: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
         })
 
+        let scoredNames: ScoredName[] = []
+        let rawNames: string[] = []
         let fullText = ''
-        const genStart = Date.now()
+        let genDuration = 0
 
-        const llmStream = client.messages.stream({
-          model: config.model,
-          max_tokens: 4096,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userMessage }],
-        })
+        for (let attempt = 0; attempt < 2; attempt++) {
+          sendEvent(controller, { step: 'generating', status: 'running' })
 
-        llmStream.on('text', (text: string) => {
-          fullText += text
-          sendEvent(controller, { step: 'generating', status: 'running', chunk: text })
-        })
+          // Include saved names as exclusion so LLM avoids duplicates
+          const excludeNames = [...dislikedNamesList, ...savedNames, ...scoredNames.map(n => n.name)]
+          const systemPrompt = getSystemPrompt({
+            dislikedChars: getDislikedChars(),
+            dislikedNames: excludeNames,
+            candidateChars: allCandidateChars,
+            ragContext,
+            xiYong,
+            jiShen,
+            namingMode: body.namingMode,
+          })
 
-        await llmStream.finalMessage()
-        const genDuration = Date.now() - genStart
+          fullText = ''
+          const genStart = Date.now()
 
-        // Parse 【名字】 format — LLM may output with or without surname
-        const bracketRegex = /【([^\】]+)】/g
-        const rawNames: string[] = []
-        const seenNames = new Set<string>()
-        let match: RegExpExecArray | null
-        while ((match = bracketRegex.exec(fullText)) !== null) {
-          let name = match[1].trim()
-          // If name doesn't start with surname, prepend it
-          if (!name.startsWith(body.surname) && name.length >= 1 && name.length <= 2) {
-            name = body.surname + name
-          }
-          if (name.startsWith(body.surname) && name.length >= 2 && name.length <= 3 && !seenNames.has(name)) {
-            seenNames.add(name)
-            rawNames.push(name)
-          }
-        }
+          const llmStream = client.messages.stream({
+            model: config.model,
+            max_tokens: 4096,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: attempt === 0 ? userMessage : `${userMessage}\n\n之前推荐的名字已在记忆中，请推荐全新的名字，不要重复。` }],
+          })
 
-        sendEvent(controller, {
-          step: 'generating', status: 'done', duration: genDuration,
-          summary: `生成${rawNames.length}个候选名：${rawNames.join('、')}`,
-          detail: { rawNames, textLength: fullText.length },
-        })
+          llmStream.on('text', (text: string) => {
+            fullText += text
+            sendEvent(controller, { step: 'generating', status: 'running', chunk: text })
+          })
 
-        // ===== Stage 4: scoring =====
-        sendEvent(controller, { step: 'scoring', status: 'running' })
+          await llmStream.finalMessage()
+          genDuration = Date.now() - genStart
 
-        const scoredNames: ScoredName[] = []
-        const scoreStart = Date.now()
-
-        for (const name of rawNames) {
-          const givenName = name.slice(body.surname.length)
-          const chars = name.split('')
-          const charInfos = chars.map(c => getCharacterInfo(c) || { char: c, pinyin: '', wuxing: '-', strokes: 0 })
-
-          const sancai = analyzeSanCaiWuGeEnhanced(name)
-          const phonetic = analyzePhonetic(givenName)
-          const strokes = charInfos.map(c => c.strokes)
-          const glyph = analyzeGlyph(givenName, strokes.slice(1))
-          const popularity = analyzeNamePopularity(givenName)
-
-          let wuxingBenefitScore = 13
-          if (baZi) {
-            const nameWuxing = charInfos.slice(1).map(c => c.wuxing).filter(w => w !== '-')
-            const benefit = analyzeWuxingBenefit(baZi, nameWuxing)
-            wuxingBenefitScore = benefit.score
-          }
-
-          const harmonyWarnings = checkHarmony(name)
-          const meaningScore = 15
-
-          const scores = {
-            wuxingBenefit: wuxingBenefitScore,
-            sancaiWuge: sancai?.score ?? 10,
-            phonetic: phonetic.score,
-            meaning: meaningScore,
-            glyph: glyph.score,
-            popularity: popularity.score,
-          }
-
-          const totalScore = Object.values(scores).reduce((sum, s) => sum + s, 0)
-
-          if (totalScore < 60) continue
-
-          let classicSource: string | undefined
-          for (const r of ragResults) {
-            if (givenName.split('').some(c => r.content.includes(c))) {
-              classicSource = `《${r.source}》"${r.content}"`
-              break
+          // Parse 【名字】 format — LLM may output with or without surname
+          const bracketRegex = /【([^\】]+)】/g
+          rawNames = []
+          const seenNames = new Set<string>()
+          let match: RegExpExecArray | null
+          while ((match = bracketRegex.exec(fullText)) !== null) {
+            let name = match[1].trim()
+            // If name doesn't start with surname, prepend it
+            if (!name.startsWith(body.surname) && name.length >= 1 && name.length <= 2) {
+              name = body.surname + name
+            }
+            if (name.startsWith(body.surname) && name.length >= 2 && name.length <= 3 && !seenNames.has(name)) {
+              seenNames.add(name)
+              rawNames.push(name)
             }
           }
 
-          let meaningText: string | undefined
-          const meaningRegex = new RegExp(`【${name}】[^]*?\\*\\*寓意\\*\\*[：:]\\s*(.+?)(?:\\n|\\*\\*)`, 'u')
-          const meaningMatch = fullText.match(meaningRegex)
-          if (meaningMatch) meaningText = meaningMatch[1].trim()
+          // Filter out names already in memory
+          const newNames = rawNames.filter(n => !savedNames.includes(n))
+          const dupCount = rawNames.length - newNames.length
 
-          let nameId: number | undefined
-          try {
-            nameId = saveName({
+          sendEvent(controller, {
+            step: 'generating', status: 'done', duration: genDuration,
+            summary: `生成${rawNames.length}个候选名${dupCount > 0 ? `（过滤${dupCount}个重复）` : ''}：${newNames.join('、')}`,
+            detail: { rawNames: newNames, textLength: fullText.length, dupCount },
+          })
+
+          // ===== Stage 4: scoring =====
+          sendEvent(controller, { step: 'scoring', status: 'running' })
+
+          const scoreStart = Date.now()
+
+          for (const name of newNames) {
+            const givenName = name.slice(body.surname.length)
+            const chars = name.split('')
+            const charInfos = chars.map(c => getCharacterInfo(c) || { char: c, pinyin: '', wuxing: '-', strokes: 0 })
+
+            const sancai = analyzeSanCaiWuGeEnhanced(name)
+            const phonetic = analyzePhonetic(givenName)
+            const strokes = charInfos.map(c => c.strokes)
+            const glyph = analyzeGlyph(givenName, strokes.slice(1))
+            const popularity = analyzeNamePopularity(givenName)
+
+            let wuxingBenefitScore = 13
+            if (baZi) {
+              const nameWuxing = charInfos.slice(1).map(c => c.wuxing).filter(w => w !== '-')
+              const benefit = analyzeWuxingBenefit(baZi, nameWuxing)
+              wuxingBenefitScore = benefit.score
+            }
+
+            const harmonyWarnings = checkHarmony(name)
+            const meaningScore = 15
+
+            const scores = {
+              wuxingBenefit: wuxingBenefitScore,
+              sancaiWuge: sancai?.score ?? 10,
+              phonetic: phonetic.score,
+              meaning: meaningScore,
+              glyph: glyph.score,
+              popularity: popularity.score,
+            }
+
+            const totalScore = Object.values(scores).reduce((sum, s) => sum + s, 0)
+
+            if (totalScore < 60) continue
+
+            let classicSource: string | undefined
+            for (const r of ragResults) {
+              if (givenName.split('').some(c => r.content.includes(c))) {
+                classicSource = `《${r.source}》"${r.content}"`
+                break
+              }
+            }
+
+            let meaningText: string | undefined
+            const meaningRegex = new RegExp(`【${name}】[^]*?\\*\\*寓意\\*\\*[：:]\\s*(.+?)(?:\\n|\\*\\*)`, 'u')
+            const meaningMatch = fullText.match(meaningRegex)
+            if (meaningMatch) meaningText = meaningMatch[1].trim()
+
+            let nameId: number | undefined
+            try {
+              nameId = saveName({
+                name,
+                surname: body.surname,
+                givenName,
+                source: 'generate',
+                score: totalScore,
+                scoresJson: JSON.stringify(scores),
+                analysisSummary: meaningText?.substring(0, 100),
+                birthTime: body.birthTime,
+              })
+            } catch (e) {
+              console.error('Failed to save name:', e)
+            }
+
+            scoredNames.push({
               name,
               surname: body.surname,
               givenName,
-              source: 'generate',
-              score: totalScore,
-              scoresJson: JSON.stringify(scores),
-              analysisSummary: meaningText?.substring(0, 100),
-              birthTime: body.birthTime,
+              pinyin: charInfos.map(c => c.pinyin).filter(Boolean).join(' '),
+              scores,
+              totalScore,
+              wuxingTags: charInfos.slice(1).map(c => c.wuxing).filter(w => w !== '-'),
+              strokes: charInfos.map(c => c.strokes),
+              classicSource,
+              meaningText,
+              harmonyWarnings: harmonyWarnings.length > 0 ? harmonyWarnings : undefined,
+              nameId,
             })
-          } catch (e) {
-            console.error('Failed to save name:', e)
           }
 
-          scoredNames.push({
-            name,
-            surname: body.surname,
-            givenName,
-            pinyin: charInfos.map(c => c.pinyin).filter(Boolean).join(' '),
-            scores,
-            totalScore,
-            wuxingTags: charInfos.slice(1).map(c => c.wuxing).filter(w => w !== '-'),
-            strokes: charInfos.map(c => c.strokes),
-            classicSource,
-            meaningText,
-            harmonyWarnings: harmonyWarnings.length > 0 ? harmonyWarnings : undefined,
-            nameId,
+          const scoreDuration = Date.now() - scoreStart
+
+          sendEvent(controller, {
+            step: 'scoring', status: 'done', duration: scoreDuration,
+            summary: `评分完成：${scoredNames.length}个合格名`,
+            detail: { passed: scoredNames.length },
           })
+
+          // If we got new names, no need to retry
+          if (scoredNames.length > 0) break
+
+          // All names were duplicates or low-score — retry once with stronger exclusion
+          if (attempt === 0) {
+            sendEvent(controller, {
+              step: 'generating', status: 'running',
+              summary: '推荐名字均在记忆中，重新生成...',
+            })
+          }
         }
-
-        const scoreDuration = Date.now() - scoreStart
-
-        sendEvent(controller, {
-          step: 'scoring', status: 'done', duration: scoreDuration,
-          summary: `评分完成：${scoredNames.length}个合格名（过滤了${rawNames.length - scoredNames.length}个低分名）`,
-          detail: { passed: scoredNames.length, filtered: rawNames.length - scoredNames.length },
-        })
 
         // ===== Complete =====
         sendEvent(controller, {
