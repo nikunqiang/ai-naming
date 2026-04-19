@@ -127,6 +127,7 @@ export default function ChatPage() {
     setPipelineStage(0)
     setScoredNamesMap({})
     setGeneratingText('')
+    setPipelineStepStatus({})
 
     try {
       const response = await fetch('/api/naming', {
@@ -325,6 +326,7 @@ export default function ChatPage() {
                 names: chatNames,
                 surname: fd.surname,
                 birthTime: fd.birthTime,
+                llmText: contentRef.current,
               }),
             })
             if (scoreRes.ok) {
@@ -401,6 +403,17 @@ export default function ChatPage() {
                   {scoredNamesMap[message.id].map((name) => (
                     <NameScoreCard key={name.name} data={name} />
                   ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const fd = pipelineFormData.current
+                      if (fd) runNamingPipeline(fd)
+                    }}
+                    disabled={isLoading}
+                    className="w-full py-2 text-sm text-ink-500 hover:text-ink-700 border border-ink-200 hover:border-ink-300 rounded-sm transition-colors disabled:opacity-40"
+                  >
+                    重新生成
+                  </button>
                 </div>
               )}
             </div>

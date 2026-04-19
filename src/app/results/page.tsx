@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import DebugPanel from '@/components/DebugPanel'
 import NameScoreCard from '@/components/NameScoreCard'
 import type { AnalysisStep } from '@/types/analysis-events'
@@ -242,6 +242,7 @@ export default function ResultsPage() {
 
 function ResultsContent() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const mode = searchParams.get('mode') || 'naming'
   const name = searchParams.get('name')
 
@@ -782,10 +783,18 @@ function ResultsContent() {
           {/* 底部操作 */}
           {mode === 'naming' && (
             <div className="mt-8 flex gap-4">
-              <button className="flex-1 btn-secondary">
+              <button
+                type="button"
+                onClick={() => router.push('/chat')}
+                className="flex-1 btn-secondary"
+              >
                 继续对话优化
               </button>
-              <button className="flex-1 btn-primary">
+              <button
+                type="button"
+                onClick={() => router.push('/chat')}
+                className="flex-1 btn-primary"
+              >
                 重新生成
               </button>
             </div>
